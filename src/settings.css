@@ -1262,3 +1262,41 @@ input[type="color"]::-webkit-color-swatch { border: none; }
 .preset-thumb {
   overflow: hidden;
 }
+/* FINAL FIX: prevent HUD corners from card containers leaking into children */
+#community-browse-card,
+#community-upload-card {
+  overflow: hidden;
+}
+
+#community-browse-card .card,
+#community-upload-card .card {
+  overflow: hidden;
+}
+
+/* Community cards should never show HUD brackets */
+.community-card {
+  overflow: hidden !important;
+  border-radius: 0 !important;
+}
+.community-card::before,
+.community-card::after {
+  display: none !important;
+  content: none !important;
+}
+
+/* Community preview box containment */
+.community-preview {
+  overflow: hidden !important;
+  position: relative;
+}
+
+/* Community grid should clip any overflow */
+.community-grid {
+  overflow: hidden;
+  isolation: isolate;
+}
+/* Nuclear option - hide any ::before/::after on parent of community-card */
+.card:has(> .community-grid)::before,
+.card:has(> .community-grid)::after {
+  display: none !important;
+}

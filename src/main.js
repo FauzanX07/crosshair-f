@@ -9,6 +9,21 @@ if (!gotLock) {
   process.exit(0);
 }
 
+const os = require('os');
+const crypto = require('crypto');
+
+function getPersistentDeviceId() {
+  // Generate a stable hash from OS info that doesn't change across reinstalls
+  const hostname = os.hostname();
+  const platform = os.platform();
+  const arch = os.arch();
+  const cpus = os.cpus()[0]?.model || '';
+  const fingerprint = `${hostname}-${platform}-${arch}-${cpus}`;
+  return crypto.createHash('sha256').update(fingerprint).digest('hex').slice(0, 16);
+}
+
+const DEVICE_ID = getPersistentDeviceId();
+
 let overlayWindow = null;
 let settingsWindow = null;
 let tray = null;
@@ -718,14 +733,28 @@ ipcMain.handle('community:download', async (event, id) => {
     if (!data || !data.length) return { ok: false, error: 'Not found' };
     const item = data[0];
 
-    // Only increment download count if THIS device hasn't applied this crosshair before
-    const applied = getAppliedSet();
-    const alreadyApplied = applied.includes(id);
-    if (!alreadyApplied) {
+    // Server-side dedupe: try to insert a row in crosshair_applies.
+    // If IP already exists for this crosshair, insert fails (unique constraint) - don't increment.
+    let alreadyApplied = false;
+    try {
+      await supabaseFetch('/crosshair_applies', {
+        method: 'POST',
+        headers: { 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ crosshair_id: id })
+      });
+      // Insert succeeded - this IP is new for this crosshair, increment
       supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}`, {
         method: 'PATCH',
         body: JSON.stringify({ downloads: (item.downloads || 0) + 1 })
       }).catch(() => {});
+    } catch (e) {
+      // Insert failed = already applied from this IP before
+      alreadyApplied = true;
+    }
+
+    // Also track locally so we can show "Applied" UI state
+    const applied = getAppliedSet();
+    if (!applied.includes(id)) {
       applied.push(id);
       setAppliedSet(applied);
     }
