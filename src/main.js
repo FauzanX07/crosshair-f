@@ -897,10 +897,26 @@ ipcMain.handle('community:uninstall', async (event, id) => {
     applied = applied.filter(x => x !== id);
     setAppliedSet(applied);
 
-    // Keep the crosshair on screen exactly as-is. Just unlink it from the community ID
-    // so future updates to that community crosshair don't affect this user's settings.
-    // User can manually switch to a different crosshair anytime from the Crosshairs tab.
+    // If this was the currently-applied community crosshair, reset crosshair to default
+    // (the classic green cross + red center dot)
     if (settings._appliedCommunityId === id) {
+      const defaultCrosshair = {
+        shape: 'cross',
+        customImage: null,
+        size: 32,
+        thickness: 2,
+        gapSize: 4,
+        color: '#00FF00',
+        opacity: 100,
+        rotation: 0,
+        outline: true,
+        outlineColor: '#000000',
+        outlineThickness: 1,
+        centerDot: true,
+        centerDotSize: 2,
+        centerDotColor: '#FF0000'
+      };
+      settings = { ...settings, ...defaultCrosshair };
       delete settings._appliedCommunityId;
       saveSettings();
       broadcastSettings();
