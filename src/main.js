@@ -469,29 +469,12 @@ ipcMain.handle('profile:delete', (event, name) => {
 });
 ipcMain.handle('profile:list', () => Object.keys(settings.profiles || {}));
 
-// Verified game presets only. Games listed here have: borderless windowed mode,
-// no 3rd-person camera offset, same aim center for all weapons, no top-bar UI intrusion.
-// Removed: Roblox (varies per experience), Tarkov (weapon zeroing), Hunt (iron sight shift),
-// Forza (not a shooter), Deadlock / Marvel Rivals (3rd-person camera offset).
-// For those games, users manually calibrate + save with Alt+Shift+S as custom preset.
+// Game presets removed in favor of user self-calibration.
+// Every game renders aim point differently per user's resolution/FOV/weapon.
+// Users must manually align with Alt+Shift+Arrows, then save with Alt+Shift+S.
+// "reset" kept as it just zeros out the offset.
 const GAME_PRESETS = {
-  'reset': { offsetX: 0, offsetY: 0, note: 'Reset (no offset)' },
-  'cs2': { offsetX: 0, offsetY: 0, note: 'Counter-Strike 2' },
-  'fortnite': { offsetX: 0, offsetY: 0, note: 'Fortnite' },
-  'apex': { offsetX: 0, offsetY: 0, note: 'Apex Legends' },
-  'warzone': { offsetX: 0, offsetY: 0, note: 'Call of Duty Warzone' },
-  'mw3': { offsetX: 0, offsetY: 0, note: 'Call of Duty MW / BO series' },
-  'pubg': { offsetX: 0, offsetY: 0, note: 'PUBG' },
-  'overwatch': { offsetX: 0, offsetY: 0, note: 'Overwatch 2' },
-  'r6siege': { offsetX: 0, offsetY: 0, note: 'Rainbow Six Siege' },
-  'thefinals': { offsetX: 0, offsetY: 0, note: 'The Finals' },
-  'rust': { offsetX: 0, offsetY: 0, note: 'Rust' },
-  'battlefield': { offsetX: 0, offsetY: 0, note: 'Battlefield 1/V/2042' },
-  'sea-of-thieves': { offsetX: 0, offsetY: 0, note: 'Sea of Thieves' },
-  'minecraft': { offsetX: 0, offsetY: 0, note: 'Minecraft' },
-  'quake': { offsetX: 0, offsetY: 0, note: 'Quake Champions' },
-  'halo': { offsetX: 0, offsetY: 0, note: 'Halo MCC' },
-  'doom': { offsetX: 0, offsetY: 0, note: 'DOOM Eternal' }
+  'reset': { offsetX: 0, offsetY: 0, note: 'Reset to center (clear any saved offset)' }
 };
 
 ipcMain.handle('app:applyGamePreset', (event, gameKey) => {

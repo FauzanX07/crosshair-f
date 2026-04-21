@@ -636,15 +636,17 @@
           </div>
         </div>
 
-        <div class="card">
-          <h3>Built-in Game Presets</h3>
-          <p class="muted">Verified games where center = aim point for all weapons. For games not in this list, manually calibrate and save your own.</p>
-          <div class="row inline">
-            <select id="gamePreset" class="select" style="flex:1">
-              <option value="">Choose a game...</option>
-            </select>
-            <button class="btn" id="btn-apply-preset">Apply</button>
-          </div>
+        <div class="card info-card">
+          <h3>How to align the crosshair in your game</h3>
+          <ol class="steps-list">
+            <li><strong>Launch your game in Borderless Windowed mode.</strong> Fullscreen Exclusive mode will hide the overlay.</li>
+            <li><strong>Aim at a reference point</strong> in-game (a training dummy, wall dot, aim trainer target).</li>
+            <li><strong>Nudge the crosshair</strong> with <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Arrows</kbd> (1 pixel) or <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Arrows</kbd> (10 pixels) until it perfectly overlaps your game's aim point.</li>
+            <li><strong>Turn on debug grid</strong> with <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> to see exact screen center if needed.</li>
+            <li><strong>Save it</strong> with <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> and give it a name like "My Fortnite" or "CS2 Crouch". It appears below in "Your Custom Game Presets".</li>
+            <li><strong>Next time you play</strong>, open this tab and click Apply on the saved preset. Done in 1 second.</li>
+          </ol>
+          <p class="muted" style="margin-top:14px">Every game renders its aim point slightly differently depending on your resolution, FOV, weapon, and stance. Manual calibration once per game gives you perfect accuracy forever.</p>
         </div>
 
         <div class="card">

@@ -444,33 +444,8 @@ $('btn-reset').addEventListener('click', async () => {
 
 $('btn-reset-pos').addEventListener('click', () => update({ offsetX: 0, offsetY: 0 }));
 
-// ===== Built-in game preset dropdown =====
-(async function loadGamePresets() {
-  try {
-    const presets = await api.listGamePresets();
-    const sel = document.getElementById('gamePreset');
-    if (!sel || !presets) return;
-    for (const p of presets) {
-      const opt = document.createElement('option');
-      opt.value = p.key;
-      opt.textContent = p.label;
-      sel.appendChild(opt);
-    }
-  } catch (e) { console.error('loadGamePresets failed', e); }
-})();
-
-const btnApplyPreset = document.getElementById('btn-apply-preset');
-if (btnApplyPreset) {
-  btnApplyPreset.addEventListener('click', async () => {
-    const key = document.getElementById('gamePreset').value;
-    if (!key) return alert('Pick a game first.');
-    const r = await api.applyGamePreset(key);
-    if (r.ok) {
-      applyToUI(r.settings);
-      alert(`Applied: ${r.note}`);
-    }
-  });
-}
+// Built-in game preset dropdown removed - users now self-calibrate.
+// The reset-to-center functionality is available via btn-reset-pos in Position Offset card.
 
 const btnCalibrate = document.getElementById('btn-calibrate');
 if (btnCalibrate) {
@@ -871,14 +846,10 @@ async function renderCommunityGrid() {
       popover.classList.remove('open');
       openReviewModal(item);
     });
-    popover.querySelector('[data-act="report"]').addEventListener('click', async e => {
+    popover.querySelector('[data-act="report"]').addEventListener('click', e => {
       e.stopPropagation();
       popover.classList.remove('open');
-      const reason = prompt('Why are you reporting this crosshair?\n\nOptions: spam, NSFW, copyrighted, offensive, broken, other');
-      if (reason && reason.trim()) {
-        const r = await api.communityReport(item.id, reason.trim());
-        alert(r.ok ? 'Reported. Thanks for helping keep the community safe.' : 'Report failed: ' + r.error);
-      }
+      openReportModal(item);
     });
     // Install button
     const installBtn = card.querySelector('[data-act="install"]');
@@ -1627,3 +1598,63 @@ document.querySelector('[data-tab="designer"]').addEventListener('click', () => 
 // Init presets on page load
 renderPresetGallery();
 loadUserCustoms();
+// ===== REPORT MODAL =====
+function openReportModal(crosshair) {
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal report-modal">
+      <button class="modal-close" id="rpt-close">×</button>
+      <h2>Report Crosshair</h2>
+      <p class="muted">Reporting "${escapeHtml(crosshair.name)}" by @${escapeHtml(crosshair.author)}</p>
+      <p class="muted" style="margin:12px 0 8px">Select a reason:</p>
+      <div class="report-reasons">
+        <button class="chip-btn" data-reason="spam">Spam</button>
+        <button class="chip-btn" data-reason="nsfw">NSFW / Inappropriate</button>
+        <button class="chip-btn" data-reason="copyright">Copyrighted</button>
+        <button class="chip-btn" data-reason="offensive">Offensive</button>
+        <button class="chip-btn" data-reason="broken">Broken / Does not work</button>
+        <button class="chip-btn" data-reason="other">Other</button>
+      </div>
+      <textarea id="rpt-details" placeholder="Optional: add more details (max 200 chars)" maxlength="200"></textarea>
+      <div class="review-actions">
+        <button class="btn ghost" id="rpt-cancel">Cancel</button>
+        <button class="btn" id="rpt-submit" disabled>Submit Report</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(bg);
+
+  let selectedReason = null;
+  bg.querySelectorAll('.chip-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      bg.querySelectorAll('.chip-btn').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      selectedReason = b.dataset.reason;
+      bg.querySelector('#rpt-submit').disabled = false;
+    });
+  });
+
+  const close = () => bg.remove();
+  bg.querySelector('#rpt-close').addEventListener('click', close);
+  bg.querySelector('#rpt-cancel').addEventListener('click', close);
+  bg.addEventListener('click', e => { if (e.target === bg) close(); });
+
+  bg.querySelector('#rpt-submit').addEventListener('click', async () => {
+    if (!selectedReason) return;
+    const details = bg.querySelector('#rpt-details').value.trim();
+    const reason = details ? `${selectedReason}: ${details}` : selectedReason;
+    const btn = bg.querySelector('#rpt-submit');
+    btn.disabled = true;
+    btn.textContent = 'Submitting...';
+    const r = await api.communityReport(crosshair.id, reason);
+    if (r.ok) {
+      alert('Report submitted. Thanks for helping keep the community safe.');
+      close();
+    } else {
+      alert('Could not submit report: ' + r.error);
+      btn.disabled = false;
+      btn.textContent = 'Submit Report';
+    }
+  });
+}
