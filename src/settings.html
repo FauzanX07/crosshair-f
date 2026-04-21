@@ -135,6 +135,17 @@
 
         <div class="card">
           <div class="preset-header">
+            <h3>Installed from Community</h3>
+            <button class="btn ghost" id="btn-go-community">Browse Community →</button>
+          </div>
+          <p class="muted">Crosshairs you installed from the Community tab. Use the 3-dot menu on each to delete.</p>
+          <div class="preset-gallery" id="installed-gallery">
+            <!-- populated by JS. Empty state shown when no installs. -->
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="preset-header">
             <h3>Your Custom Crosshairs</h3>
             <button class="btn" id="btn-go-designer">+ Create New</button>
           </div>
@@ -478,6 +489,11 @@
             <button class="btn ghost" id="btn-community-refresh">Refresh</button>
           </div>
 
+          <div class="community-filter-chips">
+            <button class="chip active" data-view="all">All Crosshairs</button>
+            <button class="chip" data-view="installed">Installed Only</button>
+          </div>
+
           <div class="community-grid" id="community-grid">
             <!-- populated by JS -->
           </div>
@@ -542,6 +558,8 @@
         </header>
 
         <div class="card">
+          <h3>Customizable Hotkeys</h3>
+          <p class="muted">Click a field and press your key combo. Use Esc to cancel.</p>
           <div class="hotkey-row">
             <div>
               <h4>Toggle Crosshair</h4>
@@ -563,7 +581,43 @@
             </div>
             <input type="text" id="hotkeyReset" class="hotkey-input" readonly value="CommandOrControl+Alt+R" />
           </div>
-          <p class="muted" style="margin-top:12px">Click a field and press your key combo. Use Esc to cancel.</p>
+        </div>
+
+        <div class="card">
+          <h3>Fixed Hotkeys</h3>
+          <p class="muted">These work in-game. They cannot be changed (to prevent conflicts with game controls).</p>
+          <div class="hotkey-reference">
+            <div class="hk-group">
+              <h4>Fine Position Adjustment (1px)</h4>
+              <div class="hk-item"><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>↑</kbd><span>Move up 1 pixel</span></div>
+              <div class="hk-item"><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>↓</kbd><span>Move down 1 pixel</span></div>
+              <div class="hk-item"><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>←</kbd><span>Move left 1 pixel</span></div>
+              <div class="hk-item"><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>→</kbd><span>Move right 1 pixel</span></div>
+            </div>
+            <div class="hk-group">
+              <h4>Fast Position Adjustment (10px)</h4>
+              <div class="hk-item"><kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>↑</kbd><span>Move up 10 pixels</span></div>
+              <div class="hk-item"><kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>↓</kbd><span>Move down 10 pixels</span></div>
+              <div class="hk-item"><kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>←</kbd><span>Move left 10 pixels</span></div>
+              <div class="hk-item"><kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>→</kbd><span>Move right 10 pixels</span></div>
+            </div>
+            <div class="hk-group">
+              <h4>Quick Actions</h4>
+              <div class="hk-item"><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd><span>Save current position as named game preset</span></div>
+              <div class="hk-item"><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd><span>Toggle debug grid (green alignment lines)</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Tips for In-Game Use</h3>
+          <ul class="tips">
+            <li>All hotkeys work even inside fullscreen games (with borderless windowed mode).</li>
+            <li>Start with big nudges (Ctrl+Alt+Shift+Arrows) to get close, then fine-tune with small ones.</li>
+            <li>Turn on debug grid (Alt+Shift+G) to see exactly where your screen center is.</li>
+            <li>Once you align perfectly for a game, press Alt+Shift+S to save it. Apply it anytime from the Display tab.</li>
+            <li>If a game uses Alt/Shift/Ctrl for its own controls, you may need to rebind Crosshair F's customizable hotkeys above.</li>
+          </ul>
         </div>
       </section>
 
@@ -677,6 +731,66 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <!-- MODAL: Crosshair Details -->
+  <div class="modal-bg" id="details-modal" style="display:none">
+    <div class="modal details-modal">
+      <button class="modal-close" id="details-close">×</button>
+      <div class="details-header">
+        <div class="details-preview" id="details-preview"></div>
+        <div class="details-info">
+          <h2 id="details-name">Loading...</h2>
+          <div class="details-meta">
+            <span id="details-author">@—</span>
+            <span class="sep">·</span>
+            <span id="details-game">—</span>
+          </div>
+          <div class="details-stars" id="details-stars"></div>
+          <div class="details-stats">
+            <span id="details-downloads">↓ 0 installs</span>
+            <span class="sep">·</span>
+            <span id="details-review-count">0 reviews</span>
+          </div>
+          <p class="details-description" id="details-description"></p>
+          <div class="details-tags" id="details-tags"></div>
+          <div class="details-actions">
+            <button class="btn" id="details-install">Install</button>
+            <button class="btn ghost" id="details-review">Rate &amp; Review</button>
+          </div>
+        </div>
+      </div>
+      <div class="details-section">
+        <h3>Rating Breakdown</h3>
+        <div class="rating-breakdown" id="rating-breakdown"></div>
+      </div>
+      <div class="details-section">
+        <h3>Reviews</h3>
+        <div class="reviews-list" id="reviews-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Rate & Review -->
+  <div class="modal-bg" id="review-modal" style="display:none">
+    <div class="modal review-modal">
+      <button class="modal-close" id="review-close">×</button>
+      <h2>Rate this crosshair</h2>
+      <p class="muted" id="review-subject">—</p>
+      <div class="star-picker" id="star-picker">
+        <button data-star="1">★</button>
+        <button data-star="2">★</button>
+        <button data-star="3">★</button>
+        <button data-star="4">★</button>
+        <button data-star="5">★</button>
+      </div>
+      <div class="star-label" id="star-label">Click a star to rate</div>
+      <textarea id="review-text" placeholder="Tell other players what you think about this crosshair. Max 500 chars." maxlength="500"></textarea>
+      <div class="review-actions">
+        <button class="btn ghost" id="review-cancel">Cancel</button>
+        <button class="btn" id="review-submit">Submit</button>
+      </div>
+    </div>
   </div>
 
   <script src="settings.js"></script>

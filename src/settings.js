@@ -796,67 +796,401 @@ async function refreshCommunity() {
   $('btn-community-next').disabled = (result.items || []).length < 20;
 }
 
-let appliedIds = [];
+// Cache of installed crosshair IDs for fast lookup in renderCommunityGrid
+let installedIds = [];
+let communityView = 'all'; // 'all' or 'installed'
 
-async function refreshAppliedIds() {
-  try { appliedIds = await api.communityListApplied() || []; }
-  catch (e) { appliedIds = []; }
+async function refreshInstalledIds() {
+  try {
+    const list = await api.communityListInstalled();
+    installedIds = (list || []).map(x => x.id);
+  } catch (e) { installedIds = []; }
 }
 
 async function renderCommunityGrid() {
-  await refreshAppliedIds();
+  await refreshInstalledIds();
   const grid = $('community-grid');
   grid.innerHTML = '';
-  if (!communityState.items.length) return;
-  for (const item of communityState.items) {
+  let items = communityState.items;
+  if (communityView === 'installed') {
+    items = items.filter(x => installedIds.includes(x.id));
+  }
+  if (!items.length) {
+    grid.innerHTML = '<p class="muted" style="grid-column:1/-1;text-align:center;padding:20px">' +
+      (communityView === 'installed' ? 'You have not installed any community crosshairs yet.' : 'No crosshairs found.') +
+      '</p>';
+    return;
+  }
+  for (const item of items) {
     const card = document.createElement('div');
     card.className = 'community-card';
     const previewSvg = renderMiniSVG(item.preset || {});
-    const isApplied = appliedIds.includes(item.id);
-card.innerHTML = `
+    const isInstalled = installedIds.includes(item.id);
+    const avgRating = parseFloat(item.rating) || 0;
+    const starsHTML = renderStars(avgRating);
+
+    card.innerHTML = `
+      <div class="card-menu">
+        <button class="card-menu-btn" title="More">⋮</button>
+        <div class="card-menu-popover">
+          <button data-act="review">⭐ Rate &amp; Review</button>
+          <button data-act="report" class="danger">🚩 Report</button>
+        </div>
+      </div>
+      ${isInstalled ? '<span class="installed-badge" style="position:absolute;top:8px;left:8px">INSTALLED</span>' : ''}
       <div class="community-preview">${previewSvg}</div>
       <div class="community-meta">
         <div class="community-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
         <div class="community-author">@${escapeHtml(item.author)} · ${escapeHtml(item.game || 'any')}</div>
       </div>
-      <div class="community-stats">
-        <span>↓ ${item.downloads || 0}</span>
-        <span class="${item.verified ? 'verified' : ''}">${item.verified ? 'SAFE' : 'PENDING'}</span>
+      <div class="community-rating">
+        <span class="stars-display">${starsHTML}</span>
+        <span>${avgRating > 0 ? avgRating.toFixed(1) : 'No ratings'}</span>
       </div>
-      ${isApplied
-        ? `<button class="btn ghost" data-act="unapply" data-id="${escapeHtml(item.id)}">✓ Applied · Unapply</button>`
-        : `<button class="btn" data-act="apply" data-id="${escapeHtml(item.id)}">Apply</button>`}
+      <div class="community-stats">
+        <span>↓ ${item.downloads || 0} installs</span>
+      </div>
+      <div class="community-card-actions">
+        ${isInstalled
+          ? `<button class="btn ghost" disabled>✓ Installed</button>`
+          : `<button class="btn" data-act="install">Install</button>`}
+        <button class="btn ghost details" data-act="details">Details</button>
+      </div>
     `;
-    const btn = card.querySelector('button');
-    btn.addEventListener('click', async () => {
-      const act = btn.dataset.act;
-      btn.disabled = true;
-      if (act === 'apply') {
-        const r = await api.communityDownload(item.id);
-        if (r.ok) {
-          applyToUI(r.settings);
-          if (r.alreadyApplied) alert(`"${item.name}" applied! (already in your applied list)`);
-          else alert(`"${item.name}" applied!`);
-          refreshCommunity();
-        } else {
-          alert('Could not apply: ' + r.error);
-          btn.disabled = false;
-        }
-      } else if (act === 'unapply') {
-        const r = await api.communityUnapply(item.id);
-        if (r.ok) {
-          applyToUI(r.settings);
-          alert(`Unapplied "${item.name}" - previous settings restored.`);
-          refreshCommunity();
-        } else {
-          alert('Could not unapply: ' + r.error);
-          btn.disabled = false;
-        }
+
+    // Wire up 3-dot menu
+    const menuBtn = card.querySelector('.card-menu-btn');
+    const popover = card.querySelector('.card-menu-popover');
+    menuBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      document.querySelectorAll('.card-menu-popover.open').forEach(p => { if (p !== popover) p.classList.remove('open'); });
+      popover.classList.toggle('open');
+    });
+
+    popover.querySelector('[data-act="review"]').addEventListener('click', e => {
+      e.stopPropagation();
+      popover.classList.remove('open');
+      openReviewModal(item);
+    });
+    popover.querySelector('[data-act="report"]').addEventListener('click', async e => {
+      e.stopPropagation();
+      popover.classList.remove('open');
+      const reason = prompt('Why are you reporting this crosshair? (spam, NSFW, copyrighted, etc.)');
+      if (reason && reason.trim()) {
+        const r = await api.communityReport(item.id, reason.trim());
+        alert(r.ok ? 'Reported. Thanks for helping keep the community safe.' : 'Report failed: ' + r.error);
       }
     });
+
+    // Install button
+    const installBtn = card.querySelector('[data-act="install"]');
+    if (installBtn) {
+      installBtn.addEventListener('click', async () => {
+        installBtn.disabled = true;
+        installBtn.textContent = 'Installing...';
+        const r = await api.communityInstall(item.id);
+        if (r.ok) {
+          applyToUI(r.settings);
+          alert(`"${item.name}" installed and applied! Find it in the Crosshairs tab under "Installed from Community".`);
+          refreshCommunity();
+          refreshInstalledGallery();
+        } else {
+          alert('Install failed: ' + r.error);
+          installBtn.disabled = false;
+          installBtn.textContent = 'Install';
+        }
+      });
+    }
+
+    // Details button
+    card.querySelector('[data-act="details"]').addEventListener('click', () => {
+      openDetailsModal(item);
+    });
+
     grid.appendChild(card);
   }
 }
+
+// Close any open card menu when clicking outside
+document.addEventListener('click', () => {
+  document.querySelectorAll('.card-menu-popover.open').forEach(p => p.classList.remove('open'));
+});
+
+function renderStars(rating) {
+  const full = Math.floor(rating);
+  const half = rating - full >= 0.5;
+  let html = '';
+  for (let i = 0; i < 5; i++) {
+    if (i < full) html += '★';
+    else if (i === full && half) html += '★';
+    else html += '<span class="star-empty">★</span>';
+  }
+  return html;
+}
+
+// ===== INSTALLED FROM COMMUNITY GALLERY =====
+async function refreshInstalledGallery() {
+  const container = document.getElementById('installed-gallery');
+  if (!container) return;
+  container.innerHTML = '';
+  const list = await api.communityListInstalled();
+  if (!list || !list.length) {
+    container.innerHTML = '<p class="muted" style="grid-column:1/-1;text-align:center;padding:20px;border:1px dashed var(--line)">No community crosshairs installed yet. Browse Community to find and install some!</p>';
+    return;
+  }
+  for (const item of list) {
+    const card = document.createElement('div');
+    card.className = 'preset-card';
+    const previewSvg = renderMiniSVG(item.preset || {});
+    card.innerHTML = `
+      <div class="card-menu">
+        <button class="card-menu-btn" title="More">⋮</button>
+        <div class="card-menu-popover">
+          <button data-act="delete" class="danger">🗑 Delete</button>
+        </div>
+      </div>
+      <div class="preset-thumb">${previewSvg}</div>
+      <div class="preset-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
+      <div class="preset-cat">BY @${escapeHtml(item.author).toUpperCase()}</div>
+    `;
+
+    const menuBtn = card.querySelector('.card-menu-btn');
+    const popover = card.querySelector('.card-menu-popover');
+    menuBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      document.querySelectorAll('.card-menu-popover.open').forEach(p => { if (p !== popover) p.classList.remove('open'); });
+      popover.classList.toggle('open');
+    });
+    popover.querySelector('[data-act="delete"]').addEventListener('click', async e => {
+      e.stopPropagation();
+      popover.classList.remove('open');
+      if (!confirm(`Delete "${item.name}" from your library?\n\nThis also decreases its install count in the community.`)) return;
+      const r = await api.communityUninstall(item.id);
+      if (r.ok) {
+        refreshInstalledGallery();
+        refreshCommunity();
+      } else {
+        alert('Could not uninstall: ' + r.error);
+      }
+    });
+
+    // Click card body applies the crosshair
+    card.addEventListener('click', async e => {
+      if (e.target.closest('.card-menu')) return;
+      const r = await api.communityApplyInstalled(item.id);
+      if (r.ok) {
+        applyToUI(r.settings);
+      }
+    });
+
+    container.appendChild(card);
+  }
+}
+
+// ===== REVIEW MODAL =====
+let reviewModalState = { crosshair: null, rating: 0 };
+
+function openReviewModal(crosshair) {
+  reviewModalState = { crosshair, rating: 0 };
+  document.getElementById('review-subject').textContent = crosshair.name + ' by @' + crosshair.author;
+  document.getElementById('review-text').value = '';
+  document.getElementById('star-label').textContent = 'Click a star to rate';
+  document.querySelectorAll('#star-picker button').forEach(b => b.classList.remove('active'));
+
+  // Pre-fill if user already reviewed
+  api.communityGetReviews(crosshair.id).then(r => {
+    if (r.ok && r.myReview) {
+      reviewModalState.rating = r.myReview.rating;
+      document.getElementById('review-text').value = r.myReview.review_text || '';
+      setStarDisplay(r.myReview.rating);
+    }
+  });
+
+  document.getElementById('review-modal').style.display = 'flex';
+}
+
+function setStarDisplay(rating) {
+  const labels = ['', 'Terrible', 'Bad', 'Okay', 'Good', 'Amazing'];
+  document.querySelectorAll('#star-picker button').forEach(b => {
+    const star = parseInt(b.dataset.star);
+    b.classList.toggle('active', star <= rating);
+  });
+  document.getElementById('star-label').textContent = rating > 0 ? `${rating} / 5 · ${labels[rating]}` : 'Click a star to rate';
+}
+
+document.querySelectorAll('#star-picker button').forEach(b => {
+  b.addEventListener('click', () => {
+    reviewModalState.rating = parseInt(b.dataset.star);
+    setStarDisplay(reviewModalState.rating);
+  });
+});
+
+document.getElementById('review-cancel').addEventListener('click', () => {
+  document.getElementById('review-modal').style.display = 'none';
+});
+document.getElementById('review-close').addEventListener('click', () => {
+  document.getElementById('review-modal').style.display = 'none';
+});
+
+document.getElementById('review-submit').addEventListener('click', async () => {
+  if (reviewModalState.rating < 1) return alert('Please pick a star rating first.');
+  const text = document.getElementById('review-text').value.trim();
+  const btn = document.getElementById('review-submit');
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+  const r = await api.communitySubmitReview({
+    crosshairId: reviewModalState.crosshair.id,
+    rating: reviewModalState.rating,
+    reviewText: text
+  });
+  btn.disabled = false;
+  btn.textContent = 'Submit';
+  if (r.ok) {
+    alert('Thanks for your review!');
+    document.getElementById('review-modal').style.display = 'none';
+    refreshCommunity();
+  } else {
+    alert('Could not submit review: ' + r.error);
+  }
+});
+
+// ===== DETAILS MODAL =====
+async function openDetailsModal(crosshair) {
+  const modal = document.getElementById('details-modal');
+  modal.style.display = 'flex';
+  // Set initial content from available data
+  document.getElementById('details-name').textContent = crosshair.name;
+  document.getElementById('details-author').textContent = '@' + crosshair.author;
+  document.getElementById('details-game').textContent = crosshair.game || 'Any game';
+  document.getElementById('details-preview').innerHTML = renderMiniSVG(crosshair.preset || {});
+  document.getElementById('details-description').textContent = crosshair.description || 'No description provided.';
+  document.getElementById('details-downloads').textContent = `↓ ${crosshair.downloads || 0} installs`;
+
+  // Tags
+  const tagContainer = document.getElementById('details-tags');
+  tagContainer.innerHTML = '';
+  if (crosshair.tags) {
+    for (const t of crosshair.tags.split(',').map(x => x.trim()).filter(Boolean)) {
+      const span = document.createElement('span');
+      span.className = 'tag';
+      span.textContent = t;
+      tagContainer.appendChild(span);
+    }
+  }
+
+  // Install button
+  const installBtn = document.getElementById('details-install');
+  const isInstalled = installedIds.includes(crosshair.id);
+  installBtn.textContent = isInstalled ? '✓ Installed' : 'Install';
+  installBtn.disabled = isInstalled;
+  installBtn.onclick = async () => {
+    installBtn.disabled = true;
+    installBtn.textContent = 'Installing...';
+    const r = await api.communityInstall(crosshair.id);
+    if (r.ok) {
+      applyToUI(r.settings);
+      installBtn.textContent = '✓ Installed';
+      refreshInstalledGallery();
+      refreshCommunity();
+    } else {
+      alert('Install failed: ' + r.error);
+      installBtn.disabled = false;
+      installBtn.textContent = 'Install';
+    }
+  };
+
+  // Review button
+  document.getElementById('details-review').onclick = () => {
+    document.getElementById('details-modal').style.display = 'none';
+    openReviewModal(crosshair);
+  };
+
+  // Fetch reviews
+  const starsEl = document.getElementById('details-stars');
+  const breakdownEl = document.getElementById('rating-breakdown');
+  const reviewsEl = document.getElementById('reviews-list');
+  const reviewCountEl = document.getElementById('details-review-count');
+  starsEl.innerHTML = '<span class="muted">Loading...</span>';
+  breakdownEl.innerHTML = '';
+  reviewsEl.innerHTML = '';
+
+  const r = await api.communityGetReviews(crosshair.id);
+  if (!r.ok) {
+    starsEl.innerHTML = `<span class="muted">Could not load reviews: ${escapeHtml(r.error)}</span>`;
+    return;
+  }
+  const avg = parseFloat(r.stats.avg_rating) || 0;
+  const total = parseInt(r.stats.total_reviews) || 0;
+  starsEl.innerHTML = `<span class="stars-display" style="font-size:16px">${renderStars(avg)}</span> <span style="font-family:var(--mono);font-size:12px;color:var(--text-dim);margin-left:8px">${avg > 0 ? avg.toFixed(1) : 'No ratings'}</span>`;
+  reviewCountEl.textContent = `${total} review${total === 1 ? '' : 's'}`;
+
+  // Rating breakdown bars
+  for (let star = 5; star >= 1; star--) {
+    const count = parseInt(r.stats['star_' + star]) || 0;
+    const pct = total > 0 ? (count / total * 100) : 0;
+    const row = document.createElement('div');
+    row.className = 'rb-row';
+    row.innerHTML = `
+      <span class="rb-label">${star} ★</span>
+      <div class="rb-bar"><div class="rb-fill" style="width:${pct}%"></div></div>
+      <span class="rb-count">${count}</span>
+    `;
+    breakdownEl.appendChild(row);
+  }
+
+  // Reviews list
+  if (!r.reviews.length) {
+    reviewsEl.innerHTML = '';
+  } else {
+    for (const review of r.reviews) {
+      const div = document.createElement('div');
+      div.className = 'review-item';
+      const date = new Date(review.created_at);
+      div.innerHTML = `
+        <div class="review-head">
+          <span class="stars-display">${renderStars(review.rating)}</span>
+          <span class="review-date">${date.toLocaleDateString()}</span>
+        </div>
+        <div class="review-author">Anonymous player</div>
+        ${review.review_text ? `<div class="review-text">${escapeHtml(review.review_text)}</div>` : ''}
+      `;
+      reviewsEl.appendChild(div);
+    }
+  }
+}
+
+document.getElementById('details-close').addEventListener('click', () => {
+  document.getElementById('details-modal').style.display = 'none';
+});
+// Close on backdrop click
+document.getElementById('details-modal').addEventListener('click', e => {
+  if (e.target.id === 'details-modal') e.target.style.display = 'none';
+});
+document.getElementById('review-modal').addEventListener('click', e => {
+  if (e.target.id === 'review-modal') e.target.style.display = 'none';
+});
+
+// ===== FILTER CHIPS (All / Installed Only) =====
+document.querySelectorAll('.community-filter-chips .chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('.community-filter-chips .chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    communityView = chip.dataset.view;
+    renderCommunityGrid();
+  });
+});
+
+// "Browse Community" button in Installed section - jump to Community tab
+const btnGoCommunity = document.getElementById('btn-go-community');
+if (btnGoCommunity) {
+  btnGoCommunity.addEventListener('click', () => {
+    const communityNav = document.querySelector('[data-tab="community"]');
+    if (communityNav) communityNav.click();
+  });
+}
+
+// Initial load of installed gallery
+refreshInstalledGallery();
 
 function escapeHtml(s) {
   if (s === undefined || s === null) return '';

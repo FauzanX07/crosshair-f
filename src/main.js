@@ -733,27 +733,24 @@ ipcMain.handle('community:download', async (event, id) => {
     if (!data || !data.length) return { ok: false, error: 'Not found' };
     const item = data[0];
 
+    // Local tracking: if this device has already applied this crosshair, DON'T increment
     const applied = getAppliedSet();
     const alreadyApplied = applied.includes(id);
 
     if (!alreadyApplied) {
-      // Call RPC function to increment downloads (bypasses RLS safely)
-      try {
-        await supabaseFetch('/rpc/increment_downloads', {
-          method: 'POST',
-          body: JSON.stringify({ crosshair_id_param: id })
-        });
-        applied.push(id);
-        setAppliedSet(applied);
-      } catch (err) {
-        console.error('Increment RPC failed:', err.message);
-        return { ok: false, error: 'Could not update count. Did you run the RPC SQL in Supabase? ' + err.message };
-      }
+      // First-time apply from this device - increment downloads
+      await supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ downloads: (item.downloads || 0) + 1 })
+      }).catch((e) => { console.error('Increment failed:', e.message); });
+      applied.push(id);
+      setAppliedSet(applied);
     }
 
     const safe = sanitizeCommunityPreset(item.preset);
     if (!safe) return { ok: false, error: 'Preset failed validation on download' };
 
+    // Backup current settings so unapply can restore them
     if (store) store.set('lastAppliedCommunityBackup', { ...settings });
     settings = { ...settings, ...safe, _appliedCommunityId: id };
     saveSettings();
@@ -769,7 +766,10 @@ ipcMain.handle('community:unapply', async (event, id) => {
     const applied = getAppliedSet();
     const idx = applied.indexOf(id);
 
+    // IDEMPOTENCY: only decrement if this device actually had it applied.
+    // This prevents count-going-negative after uninstall/reinstall or stale data.
     if (idx === -1) {
+      // Not in applied list - don't touch the count, just restore backup if any
       const backup = store ? store.get('lastAppliedCommunityBackup') : null;
       if (backup) {
         settings = { ...backup };
@@ -780,19 +780,22 @@ ipcMain.handle('community:unapply', async (event, id) => {
       return { ok: true, settings, wasApplied: false };
     }
 
-    // Call RPC to decrement downloads (bypasses RLS)
-    try {
-      await supabaseFetch('/rpc/decrement_downloads', {
-        method: 'POST',
-        body: JSON.stringify({ crosshair_id_param: id })
-      });
-    } catch (err) {
-      console.error('Decrement RPC failed:', err.message);
+    // Fetch current count, decrement by 1 (but never below 0)
+    const data = await supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}&select=*`);
+    if (data && data.length) {
+      const current = data[0].downloads || 0;
+      const newCount = Math.max(0, current - 1);
+      await supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ downloads: newCount })
+      }).catch((e) => { console.error('Decrement failed:', e.message); });
     }
 
+    // Remove from local applied set
     applied.splice(idx, 1);
     setAppliedSet(applied);
 
+    // Restore previous settings
     const backup = store ? store.get('lastAppliedCommunityBackup') : null;
     if (backup) {
       settings = { ...backup };
@@ -806,7 +809,197 @@ ipcMain.handle('community:unapply', async (event, id) => {
   }
 });
 
-ipcMain.handle('community:listApplied', () => getAppliedSet());
+// ========== DEVICE ID (for review dedup, no accounts) ==========
+function getDeviceId() {
+  if (!store) return 'anonymous';
+  let id = store.get('deviceId');
+  if (!id) {
+    id = 'dev_' + Date.now() + '_' + Math.random().toString(36).slice(2, 12);
+    store.set('deviceId', id);
+  }
+  return id;
+}
+
+// ========== INSTALLED CROSSHAIRS (downloaded from community) ==========
+function getInstalledCrosshairs() {
+  return store ? (store.get('installedCrosshairs') || []) : [];
+}
+function setInstalledCrosshairs(list) {
+  if (store) store.set('installedCrosshairs', list);
+}
+
+ipcMain.handle('community:install', async (event, id) => {
+  try {
+    const data = await supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}&select=*`);
+    if (!data || !data.length) return { ok: false, error: 'Not found' };
+    const item = data[0];
+
+    const installed = getInstalledCrosshairs();
+    const alreadyInstalled = installed.find(x => x.id === id);
+    if (alreadyInstalled) {
+      return { ok: false, error: 'Already installed. Check your Crosshairs tab.', alreadyInstalled: true };
+    }
+
+    // Increment download count via RPC
+    try {
+      await supabaseFetch('/rpc/increment_downloads', {
+        method: 'POST',
+        body: JSON.stringify({ crosshair_id_param: id })
+      });
+    } catch (err) {
+      console.error('Increment RPC failed:', err.message);
+      return { ok: false, error: 'Could not update download count. ' + err.message };
+    }
+
+    const safe = sanitizeCommunityPreset(item.preset);
+    if (!safe) return { ok: false, error: 'Preset failed validation' };
+
+    const entry = {
+      id: item.id,
+      name: item.name,
+      author: item.author,
+      game: item.game,
+      description: item.description,
+      tags: item.tags,
+      preset: safe,
+      installed_at: new Date().toISOString()
+    };
+    installed.push(entry);
+    setInstalledCrosshairs(installed);
+
+    // Also apply it immediately
+    if (store) store.set('lastAppliedCommunityBackup', { ...settings });
+    settings = { ...settings, ...safe, _appliedCommunityId: id };
+    saveSettings();
+    broadcastSettings();
+
+    // Also update the local applied set (for compatibility)
+    const applied = getAppliedSet();
+    if (!applied.includes(id)) {
+      applied.push(id);
+      setAppliedSet(applied);
+    }
+    return { ok: true, settings, entry };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('community:uninstall', async (event, id) => {
+  try {
+    let installed = getInstalledCrosshairs();
+    const entry = installed.find(x => x.id === id);
+    if (!entry) return { ok: false, error: 'Not in your installed library' };
+
+    // Decrement download count via RPC
+    try {
+      await supabaseFetch('/rpc/decrement_downloads', {
+        method: 'POST',
+        body: JSON.stringify({ crosshair_id_param: id })
+      });
+    } catch (err) {
+      console.error('Decrement RPC failed:', err.message);
+    }
+
+    installed = installed.filter(x => x.id !== id);
+    setInstalledCrosshairs(installed);
+
+    // Remove from applied set too
+    let applied = getAppliedSet();
+    applied = applied.filter(x => x !== id);
+    setAppliedSet(applied);
+
+    // If this was the currently-applied community crosshair, restore backup
+    if (settings._appliedCommunityId === id) {
+      const backup = store ? store.get('lastAppliedCommunityBackup') : null;
+      if (backup) {
+        settings = { ...backup };
+        delete settings._appliedCommunityId;
+        saveSettings();
+        broadcastSettings();
+      }
+    }
+    return { ok: true, installed };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('community:listInstalled', () => getInstalledCrosshairs());
+
+ipcMain.handle('community:applyInstalled', (event, id) => {
+  const installed = getInstalledCrosshairs();
+  const entry = installed.find(x => x.id === id);
+  if (!entry) return { ok: false, error: 'Not found in installed library' };
+  if (store) store.set('lastAppliedCommunityBackup', { ...settings });
+  settings = { ...settings, ...entry.preset, _appliedCommunityId: id };
+  saveSettings();
+  broadcastSettings();
+  return { ok: true, settings };
+});
+
+// ========== REVIEWS & RATINGS ==========
+ipcMain.handle('community:submitReview', async (event, { crosshairId, rating, reviewText }) => {
+  try {
+    if (!crosshairId) return { ok: false, error: 'Crosshair ID required' };
+    const r = parseInt(rating);
+    if (isNaN(r) || r < 1 || r > 5) return { ok: false, error: 'Rating must be 1-5' };
+    const text = (reviewText || '').slice(0, 500);
+    const deviceId = getDeviceId();
+
+    await supabaseFetch('/rpc/submit_review', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_crosshair_id: crosshairId,
+        p_device_id: deviceId,
+        p_rating: r,
+        p_review_text: text
+      })
+    });
+    return { ok: true };
+  } catch (e) {
+    console.error('Submit review failed:', e.message);
+    return { ok: false, error: 'Could not submit review. Did you run the reviews SQL? ' + e.message };
+  }
+});
+
+ipcMain.handle('community:getReviews', async (event, crosshairId) => {
+  try {
+    if (!crosshairId) return { ok: false, error: 'Crosshair ID required' };
+    const reviews = await supabaseFetch('/rpc/get_reviews', {
+      method: 'POST',
+      body: JSON.stringify({ p_crosshair_id: crosshairId })
+    });
+    const stats = await supabaseFetch('/rpc/get_review_stats', {
+      method: 'POST',
+      body: JSON.stringify({ p_crosshair_id: crosshairId })
+    });
+    const deviceId = getDeviceId();
+    const myReview = (reviews || []).find(r => r.device_id === deviceId);
+    return {
+      ok: true,
+      reviews: reviews || [],
+      stats: (stats && stats[0]) || { avg_rating: 0, total_reviews: 0, star_1:0, star_2:0, star_3:0, star_4:0, star_5:0 },
+      myReview: myReview || null
+    };
+  } catch (e) {
+    console.error('Get reviews failed:', e.message);
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('community:getDetails', async (event, crosshairId) => {
+  try {
+    const data = await supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(crosshairId)}&select=*`);
+    if (!data || !data.length) return { ok: false, error: 'Not found' };
+    const item = data[0];
+    const installed = getInstalledCrosshairs();
+    const isInstalled = !!installed.find(x => x.id === crosshairId);
+    return { ok: true, item, isInstalled };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
 
 ipcMain.handle('community:report', async (event, { id, reason }) => {
   try {

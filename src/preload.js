@@ -28,10 +28,23 @@ contextBridge.exposeInMainWorld('crosshairAPI', {
   communityGetConfig: () => ipcRenderer.invoke('community:getConfig'),
   communityList: (params) => ipcRenderer.invoke('community:list', params),
   communityUpload: (data) => ipcRenderer.invoke('community:upload', data),
-communityDownload: (id) => ipcRenderer.invoke('community:download', id),
-  communityUnapply: (id) => ipcRenderer.invoke('community:unapply', id),
-  communityListApplied: () => ipcRenderer.invoke('community:listApplied'),
+  communityDownload: (id) => ipcRenderer.invoke('community:download', id),
   communityReport: (id, reason) => ipcRenderer.invoke('community:report', { id, reason }),
+
+  // Install/Uninstall system (community crosshairs → user library)
+  communityInstall: (id) => ipcRenderer.invoke('community:install', id),
+  communityUninstall: (id) => ipcRenderer.invoke('community:uninstall', id),
+  communityListInstalled: () => ipcRenderer.invoke('community:listInstalled'),
+  communityApplyInstalled: (id) => ipcRenderer.invoke('community:applyInstalled', id),
+
+  // Reviews & Ratings
+  communitySubmitReview: (data) => ipcRenderer.invoke('community:submitReview', data),
+  communityGetReviews: (id) => ipcRenderer.invoke('community:getReviews', id),
+  communityGetDetails: (id) => ipcRenderer.invoke('community:getDetails', id),
+
+  // (legacy, kept for back-compat with any cached code)
+  communityUnapply: (id) => ipcRenderer.invoke('community:uninstall', id),
+  communityListApplied: () => ipcRenderer.invoke('community:listInstalled'),
 
   // Game presets & calibration
   applyGamePreset: (key) => ipcRenderer.invoke('app:applyGamePreset', key),
