@@ -871,19 +871,7 @@ input[type="color"]::-webkit-color-swatch { border: none; }
   font-size: 10px;
   width: 100%;
 }
-.community-tag {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  background: var(--bg-0);
-  color: var(--accent);
-  font-family: var(--mono);
-  font-size: 8px;
-  padding: 2px 5px;
-  border: 1px solid var(--accent);
-  letter-spacing: 1px;
-  text-transform: uppercase;
-}
+
 
 .community-pagination {
   display: flex;

@@ -813,8 +813,7 @@ async function renderCommunityGrid() {
     card.className = 'community-card';
     const previewSvg = renderMiniSVG(item.preset || {});
     const isApplied = appliedIds.includes(item.id);
-    card.innerHTML = `
-      ${item.verified ? '<span class="community-tag">✓ Verified</span>' : ''}
+card.innerHTML = `
       <div class="community-preview">${previewSvg}</div>
       <div class="community-meta">
         <div class="community-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
