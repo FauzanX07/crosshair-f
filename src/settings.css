@@ -1288,3 +1288,10 @@ input[type="color"]::-webkit-color-swatch { border: none; }
 .card:has(> .community-grid)::after {
   display: none !important;
 }
+#community-upload-card {
+  margin-top: 24px !important;
+}
+
+.community-grid {
+  padding-top: 8px;
+}

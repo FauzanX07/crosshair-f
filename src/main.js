@@ -733,28 +733,16 @@ ipcMain.handle('community:download', async (event, id) => {
     if (!data || !data.length) return { ok: false, error: 'Not found' };
     const item = data[0];
 
-    // Server-side dedupe: try to insert a row in crosshair_applies.
-    // If IP already exists for this crosshair, insert fails (unique constraint) - don't increment.
-    let alreadyApplied = false;
-    try {
-      await supabaseFetch('/crosshair_applies', {
-        method: 'POST',
-        headers: { 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ crosshair_id: id })
-      });
-      // Insert succeeded - this IP is new for this crosshair, increment
-      supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}`, {
+    // Local tracking: if this device has already applied this crosshair, DON'T increment
+    const applied = getAppliedSet();
+    const alreadyApplied = applied.includes(id);
+
+    if (!alreadyApplied) {
+      // First-time apply from this device - increment downloads
+      await supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}`, {
         method: 'PATCH',
         body: JSON.stringify({ downloads: (item.downloads || 0) + 1 })
-      }).catch(() => {});
-    } catch (e) {
-      // Insert failed = already applied from this IP before
-      alreadyApplied = true;
-    }
-
-    // Also track locally so we can show "Applied" UI state
-    const applied = getAppliedSet();
-    if (!applied.includes(id)) {
+      }).catch((e) => { console.error('Increment failed:', e.message); });
       applied.push(id);
       setAppliedSet(applied);
     }
@@ -762,7 +750,7 @@ ipcMain.handle('community:download', async (event, id) => {
     const safe = sanitizeCommunityPreset(item.preset);
     if (!safe) return { ok: false, error: 'Preset failed validation on download' };
 
-    // Remember the previous settings so user can unapply
+    // Backup current settings so unapply can restore them
     if (store) store.set('lastAppliedCommunityBackup', { ...settings });
     settings = { ...settings, ...safe, _appliedCommunityId: id };
     saveSettings();
@@ -777,24 +765,37 @@ ipcMain.handle('community:unapply', async (event, id) => {
   try {
     const applied = getAppliedSet();
     const idx = applied.indexOf(id);
-    if (idx === -1) return { ok: false, error: 'You have not applied this crosshair' };
 
-    // Decrement download count on server
+    // IDEMPOTENCY: only decrement if this device actually had it applied.
+    // This prevents count-going-negative after uninstall/reinstall or stale data.
+    if (idx === -1) {
+      // Not in applied list - don't touch the count, just restore backup if any
+      const backup = store ? store.get('lastAppliedCommunityBackup') : null;
+      if (backup) {
+        settings = { ...backup };
+        delete settings._appliedCommunityId;
+        saveSettings();
+        broadcastSettings();
+      }
+      return { ok: true, settings, wasApplied: false };
+    }
+
+    // Fetch current count, decrement by 1 (but never below 0)
     const data = await supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}&select=*`);
     if (data && data.length) {
       const current = data[0].downloads || 0;
       const newCount = Math.max(0, current - 1);
-      supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}`, {
+      await supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}`, {
         method: 'PATCH',
         body: JSON.stringify({ downloads: newCount })
-      }).catch(() => {});
+      }).catch((e) => { console.error('Decrement failed:', e.message); });
     }
 
-    // Remove from applied set
+    // Remove from local applied set
     applied.splice(idx, 1);
     setAppliedSet(applied);
 
-    // Restore previous settings if we have them
+    // Restore previous settings
     const backup = store ? store.get('lastAppliedCommunityBackup') : null;
     if (backup) {
       settings = { ...backup };
@@ -802,7 +803,7 @@ ipcMain.handle('community:unapply', async (event, id) => {
       saveSettings();
       broadcastSettings();
     }
-    return { ok: true, settings };
+    return { ok: true, settings, wasApplied: true };
   } catch (e) {
     return { ok: false, error: e.message };
   }
