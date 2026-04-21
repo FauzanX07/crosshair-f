@@ -2,11 +2,16 @@ const { app, BrowserWindow, screen, globalShortcut, Tray, Menu, ipcMain, nativeI
 const path = require('path');
 const fs = require('fs');
 
-// Single instance lock
-const gotLock = app.requestSingleInstanceLock();
-if (!gotLock) {
-  app.quit();
-  process.exit(0);
+// Handle cleanup-downloads mode (runs when user uninstalls the app)
+// Must check args BEFORE single-instance-lock because cleanup runs parallel to uninstaller
+const isCleanupMode = process.argv.includes('--cleanup-downloads');
+
+if (!isCleanupMode) {
+  const gotLock = app.requestSingleInstanceLock();
+  if (!gotLock) {
+    app.quit();
+    process.exit(0);
+  }
 }
 
 const os = require('os');
@@ -1049,8 +1054,55 @@ Click "I Understand & Accept" to continue, or "Exit" to quit.`,
   return true;
 }
 
+// ========== CLEANUP MODE (called by uninstaller) ==========
+async function runCleanupMode() {
+  try {
+    const Store = (await import('electron-store')).default;
+    const tempStore = new Store({ name: 'crosshair-f-config' });
+    const installed = tempStore.get('installedCrosshairs') || [];
+    const savedCfg = tempStore.get('community') || {};
+    const endpoint = (savedCfg.endpoint || DEFAULT_COMMUNITY_CONFIG.endpoint).replace(/\/$/, '');
+    const apiKey = savedCfg.apiKey || DEFAULT_COMMUNITY_CONFIG.apiKey;
+
+    console.log(`[Cleanup] Decrementing ${installed.length} install counts...`);
+
+    // Decrement each install count in parallel with 3s timeout per call
+    const promises = installed.map(item => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3000);
+      return fetch(`${endpoint}/rest/v1/rpc/decrement_downloads`, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'apikey': apiKey,
+          'Authorization': 'Bearer ' + apiKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ crosshair_id_param: item.id })
+      }).catch(() => null).finally(() => clearTimeout(timer));
+    });
+
+    await Promise.all(promises);
+
+    // Clear local lists so if user reinstalls, they start fresh
+    tempStore.set('installedCrosshairs', []);
+    tempStore.set('appliedCommunityIds', []);
+
+    console.log('[Cleanup] Done.');
+  } catch (e) {
+    console.error('[Cleanup] Failed:', e.message);
+  }
+  app.quit();
+}
+
 // App lifecycle
 app.whenReady().then(async () => {
+  // CLEANUP MODE - called by the uninstaller before deleting files
+  if (isCleanupMode) {
+    await runCleanupMode();
+    return;
+  }
+
   await loadStore();
   const accepted = await showFirstLaunchDisclaimer();
   if (!accepted) return;
