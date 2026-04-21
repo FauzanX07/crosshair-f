@@ -812,6 +812,10 @@ input[type="color"]::-webkit-color-swatch { border: none; }
   gap: 8px;
   transition: all 150ms;
   position: relative;
+  overflow: hidden;
+}
+.community-card::before, .community-card::after {
+  display: none !important;
 }
 .community-card:hover {
   border-color: var(--accent);
@@ -963,6 +967,10 @@ input[type="color"]::-webkit-color-swatch { border: none; }
   display: flex;
   flex-direction: column;
   gap: 4px;
+  overflow: hidden;
+}
+.preset-card::before, .preset-card::after {
+  display: none !important;
 }
 .preset-card:hover {
   border-color: var(--accent);

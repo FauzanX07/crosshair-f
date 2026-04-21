@@ -656,15 +656,23 @@ ipcMain.handle('community:list', async (event, params = {}) => {
   const { search = '', game = '', sort = 'popular', page = 0, limit = 20 } = params;
   let query = '/crosshairs?select=*&verified=eq.true';
   if (game) query += `&game=eq.${encodeURIComponent(game)}`;
-  if (search) query += `&or=(name.ilike.*${encodeURIComponent(search)}*,author.ilike.*${encodeURIComponent(search)}*,tags.ilike.*${encodeURIComponent(search)}*)`;
+  if (search && search.trim()) {
+    // Supabase PostgREST: escape reserved chars in ilike patterns
+    const safe = search.trim().replace(/[%_,()]/g, '').slice(0, 40);
+    if (safe.length > 0) {
+      const pattern = encodeURIComponent(`*${safe}*`);
+      query += `&or=(name.ilike.${pattern},author.ilike.${pattern},tags.ilike.${pattern},description.ilike.${pattern})`;
+    }
+  }
   if (sort === 'popular') query += '&order=downloads.desc';
   else if (sort === 'recent') query += '&order=created_at.desc';
   else if (sort === 'rating') query += '&order=rating.desc';
   query += `&offset=${page * limit}&limit=${limit}`;
   try {
     const data = await supabaseFetch(query);
-    return { ok: true, items: data };
+    return { ok: true, items: data || [] };
   } catch (e) {
+    console.error('Community list query:', query, 'error:', e.message);
     return { ok: false, error: e.message };
   }
 });
@@ -695,25 +703,83 @@ ipcMain.handle('community:upload', async (event, data) => {
   }
 });
 
+// Track which community crosshairs this device has already counted
+function getAppliedSet() {
+  if (!store) return [];
+  return store.get('appliedCommunityIds') || [];
+}
+function setAppliedSet(list) {
+  if (store) store.set('appliedCommunityIds', list);
+}
+
 ipcMain.handle('community:download', async (event, id) => {
   try {
     const data = await supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}&select=*`);
     if (!data || !data.length) return { ok: false, error: 'Not found' };
     const item = data[0];
-    supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ downloads: (item.downloads || 0) + 1 })
-    }).catch(() => {});
+
+    // Only increment download count if THIS device hasn't applied this crosshair before
+    const applied = getAppliedSet();
+    const alreadyApplied = applied.includes(id);
+    if (!alreadyApplied) {
+      supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ downloads: (item.downloads || 0) + 1 })
+      }).catch(() => {});
+      applied.push(id);
+      setAppliedSet(applied);
+    }
+
     const safe = sanitizeCommunityPreset(item.preset);
     if (!safe) return { ok: false, error: 'Preset failed validation on download' };
-    settings = { ...settings, ...safe };
+
+    // Remember the previous settings so user can unapply
+    if (store) store.set('lastAppliedCommunityBackup', { ...settings });
+    settings = { ...settings, ...safe, _appliedCommunityId: id };
     saveSettings();
     broadcastSettings();
+    return { ok: true, settings, alreadyApplied };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('community:unapply', async (event, id) => {
+  try {
+    const applied = getAppliedSet();
+    const idx = applied.indexOf(id);
+    if (idx === -1) return { ok: false, error: 'You have not applied this crosshair' };
+
+    // Decrement download count on server
+    const data = await supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}&select=*`);
+    if (data && data.length) {
+      const current = data[0].downloads || 0;
+      const newCount = Math.max(0, current - 1);
+      supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ downloads: newCount })
+      }).catch(() => {});
+    }
+
+    // Remove from applied set
+    applied.splice(idx, 1);
+    setAppliedSet(applied);
+
+    // Restore previous settings if we have them
+    const backup = store ? store.get('lastAppliedCommunityBackup') : null;
+    if (backup) {
+      settings = { ...backup };
+      delete settings._appliedCommunityId;
+      saveSettings();
+      broadcastSettings();
+    }
     return { ok: true, settings };
   } catch (e) {
     return { ok: false, error: e.message };
   }
 });
+
+ipcMain.handle('community:listApplied', () => getAppliedSet());
 
 ipcMain.handle('community:report', async (event, { id, reason }) => {
   try {

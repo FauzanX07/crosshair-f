@@ -796,7 +796,15 @@ async function refreshCommunity() {
   $('btn-community-next').disabled = (result.items || []).length < 20;
 }
 
-function renderCommunityGrid() {
+let appliedIds = [];
+
+async function refreshAppliedIds() {
+  try { appliedIds = await api.communityListApplied() || []; }
+  catch (e) { appliedIds = []; }
+}
+
+async function renderCommunityGrid() {
+  await refreshAppliedIds();
   const grid = $('community-grid');
   grid.innerHTML = '';
   if (!communityState.items.length) return;
@@ -804,6 +812,7 @@ function renderCommunityGrid() {
     const card = document.createElement('div');
     card.className = 'community-card';
     const previewSvg = renderMiniSVG(item.preset || {});
+    const isApplied = appliedIds.includes(item.id);
     card.innerHTML = `
       ${item.verified ? '<span class="community-tag">✓ Verified</span>' : ''}
       <div class="community-preview">${previewSvg}</div>
@@ -815,15 +824,35 @@ function renderCommunityGrid() {
         <span>↓ ${item.downloads || 0}</span>
         <span class="${item.verified ? 'verified' : ''}">${item.verified ? 'SAFE' : 'PENDING'}</span>
       </div>
-      <button class="btn" data-id="${escapeHtml(item.id)}">Apply</button>
+      ${isApplied
+        ? `<button class="btn ghost" data-act="unapply" data-id="${escapeHtml(item.id)}">✓ Applied · Unapply</button>`
+        : `<button class="btn" data-act="apply" data-id="${escapeHtml(item.id)}">Apply</button>`}
     `;
-    card.querySelector('button').addEventListener('click', async () => {
-      const r = await api.communityDownload(item.id);
-      if (r.ok) {
-        applyToUI(r.settings);
-        alert(`"${item.name}" applied!`);
-      } else {
-        alert('Could not apply: ' + r.error);
+    const btn = card.querySelector('button');
+    btn.addEventListener('click', async () => {
+      const act = btn.dataset.act;
+      btn.disabled = true;
+      if (act === 'apply') {
+        const r = await api.communityDownload(item.id);
+        if (r.ok) {
+          applyToUI(r.settings);
+          if (r.alreadyApplied) alert(`"${item.name}" applied! (already in your applied list)`);
+          else alert(`"${item.name}" applied!`);
+          refreshCommunity();
+        } else {
+          alert('Could not apply: ' + r.error);
+          btn.disabled = false;
+        }
+      } else if (act === 'unapply') {
+        const r = await api.communityUnapply(item.id);
+        if (r.ok) {
+          applyToUI(r.settings);
+          alert(`Unapplied "${item.name}" - previous settings restored.`);
+          refreshCommunity();
+        } else {
+          alert('Could not unapply: ' + r.error);
+          btn.disabled = false;
+        }
       }
     });
     grid.appendChild(card);

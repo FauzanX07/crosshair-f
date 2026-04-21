@@ -47,9 +47,7 @@
       "output": "dist",
       "buildResources": "assets"
     },
- "win": {
-      "certificateFile": "C:/Users/fauzanx07/Desktop/crosshair-f-cert.pfx",
-      "certificatePassword": "test123",
+    "win": {
       "target": [
         {
           "target": "nsis",
@@ -70,7 +68,8 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Crosshair F",
       "installerIcon": "assets/icon.ico",
-      "uninstallerIcon": "assets/icon.ico"
+      "uninstallerIcon": "assets/icon.ico",
+      "include": "build/uninstaller.nsh"
     },
     "portable": {
       "artifactName": "CrosshairF-Portable.exe"

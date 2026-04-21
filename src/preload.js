@@ -28,7 +28,9 @@ contextBridge.exposeInMainWorld('crosshairAPI', {
   communityGetConfig: () => ipcRenderer.invoke('community:getConfig'),
   communityList: (params) => ipcRenderer.invoke('community:list', params),
   communityUpload: (data) => ipcRenderer.invoke('community:upload', data),
-  communityDownload: (id) => ipcRenderer.invoke('community:download', id),
+communityDownload: (id) => ipcRenderer.invoke('community:download', id),
+  communityUnapply: (id) => ipcRenderer.invoke('community:unapply', id),
+  communityListApplied: () => ipcRenderer.invoke('community:listApplied'),
   communityReport: (id, reason) => ipcRenderer.invoke('community:report', { id, reason }),
 
   // Game presets & calibration
