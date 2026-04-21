@@ -1242,3 +1242,23 @@ input[type="color"]::-webkit-color-swatch { border: none; }
   padding: 6px 12px;
   font-size: 10px;
 }
+/* FIX: kill all HUD bracket bleed-through on community/preset cards */
+.community-card,
+.preset-card {
+  overflow: hidden !important;
+}
+.community-card::before,
+.community-card::after,
+.preset-card::before,
+.preset-card::after {
+  display: none !important;
+  content: none !important;
+}
+.community-grid,
+.preset-gallery {
+  overflow: hidden;
+}
+.community-preview,
+.preset-thumb {
+  overflow: hidden;
+}
