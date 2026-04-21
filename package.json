@@ -48,6 +48,8 @@
       "buildResources": "assets"
     },
     "win": {
+      "certificateFile": "C:/Users/fauzanx07/Desktop/crosshair-f-cert.pfx",
+      "certificatePassword": "test123",
       "target": [
         {
           "target": "nsis",
