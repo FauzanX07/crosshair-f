@@ -897,16 +897,15 @@ ipcMain.handle('community:uninstall', async (event, id) => {
     applied = applied.filter(x => x !== id);
     setAppliedSet(applied);
 
-    // If this was the currently-applied community crosshair, restore backup
+    // Keep the crosshair on screen exactly as-is. Just unlink it from the community ID
+    // so future updates to that community crosshair don't affect this user's settings.
+    // User can manually switch to a different crosshair anytime from the Crosshairs tab.
     if (settings._appliedCommunityId === id) {
-      const backup = store ? store.get('lastAppliedCommunityBackup') : null;
-      if (backup) {
-        settings = { ...backup };
-        delete settings._appliedCommunityId;
-        saveSettings();
-        broadcastSettings();
-      }
+      delete settings._appliedCommunityId;
+      saveSettings();
+      broadcastSettings();
     }
+
     return { ok: true, installed };
   } catch (e) {
     return { ok: false, error: e.message };
