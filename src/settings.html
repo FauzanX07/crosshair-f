@@ -457,25 +457,7 @@
           <p>Browse and download crosshairs shared by other players. Upload yours for the world to use.</p>
         </header>
 
-        <div class="card community-status" id="community-status">
-          <h3>Backend Connection</h3>
-          <p class="muted">Server status and configuration.</p>
-          <div class="row">
-            <label>API Endpoint</label>
-            <input type="text" id="communityEndpoint" placeholder="https://your-supabase-project.supabase.co" />
-          </div>
-          <div class="row">
-            <label>Public API Key (anon)</label>
-            <input type="text" id="communityApiKey" placeholder="eyJhbGciOi..." />
-          </div>
-          <div class="actions">
-            <button class="btn" id="btn-community-save">Save &amp; Connect</button>
-            <button class="btn ghost" id="btn-community-test">Test Connection</button>
-          </div>
-          <p class="muted" id="community-conn-status" style="margin-top:10px">Not connected. See README.md → "Community Backend Setup" to host your own (free).</p>
-        </div>
-
-        <div class="card" id="community-browse-card" style="display:none">
+        <div class="card" id="community-browse-card">
           <h3>Browse Community</h3>
           <div class="community-toolbar">
             <input type="text" id="community-search" placeholder="Search by name, game, author..." />
@@ -507,7 +489,7 @@
           </div>
         </div>
 
-        <div class="card" id="community-upload-card" style="display:none">
+        <div class="card" id="community-upload-card">
           <h3>Share your crosshair</h3>
           <p class="muted">Upload your current crosshair so other players can use it.</p>
           <div class="grid-2">
@@ -549,18 +531,6 @@
           <div class="actions">
             <button class="btn" id="btn-upload-crosshair">Upload Current Crosshair</button>
           </div>
-        </div>
-
-        <div class="card warning" id="community-disabled-warning">
-          <h3>Quick start</h3>
-          <p>The community feature needs a backend. We use <strong>Supabase</strong> (free tier, hosts up to 50,000 users free) so anyone can self-host without paying.</p>
-          <ol class="tips" style="margin-top:10px">
-            <li>Sign up at supabase.com (uses your Gmail, free)</li>
-            <li>Create a new project, copy the URL and anon key</li>
-            <li>Run the SQL setup script from <code>community/setup.sql</code></li>
-            <li>Paste the URL + key above and click Save</li>
-          </ol>
-          <p class="muted" style="margin-top:8px">Full step by step in <code>community/README.md</code> in the project folder.</p>
         </div>
       </section>
 
@@ -614,7 +584,7 @@
 
         <div class="card">
           <h3>Built-in Game Presets</h3>
-          <p class="muted">Auto-set offset for popular games. Roblox especially needs this because of its top bar.</p>
+          <p class="muted">Verified games where center = aim point for all weapons. For games not in this list, manually calibrate and save your own.</p>
           <div class="row inline">
             <select id="gamePreset" class="select" style="flex:1">
               <option value="">Choose a game...</option>
@@ -636,7 +606,7 @@
 
         <div class="card">
           <h3>Position Offset</h3>
-          <p class="muted">Manually adjust crosshair position. Use Alt+Shift+Arrow keys to nudge 1px at a time in-game, or Ctrl+Alt+Shift+Arrow for 10px steps.</p>
+          <p class="muted">Manually adjust crosshair position. In-game hotkeys: Alt+Shift+Arrows (1px), Ctrl+Alt+Shift+Arrows (10px).</p>
           <div class="grid-2">
             <div class="row">
               <label>Horizontal Offset <span class="val" id="val-offsetX">0</span>px</label>

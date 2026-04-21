@@ -267,7 +267,7 @@ function registerHotkeys() {
   safeReg('Alt+Shift+S', () => saveCurrentAsCustomGamePreset(), 'savePreset');
 }
 
-// ========== CUSTOM GAME PRESETS (user-made) ==========
+// ========== CUSTOM GAME PRESETS (user-made, hotkey-saveable) ==========
 function getCustomGamePresets() {
   return store ? (store.get('customGamePresets') || []) : [];
 }
@@ -279,7 +279,6 @@ function setCustomGamePresets(list) {
 let promptWindow = null;
 
 function saveCurrentAsCustomGamePreset() {
-  // Require at least some offset so user doesn't save empty defaults
   if (settings.offsetX === 0 && settings.offsetY === 0) {
     if (settingsWindow && !settingsWindow.isDestroyed()) {
       settingsWindow.webContents.send('notify', 'Adjust position first with Alt+Shift+Arrows before saving.');
@@ -298,15 +297,16 @@ function openPromptWindow() {
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
   promptWindow = new BrowserWindow({
     width: 420,
-    height: 200,
+    height: 220,
     x: Math.floor(sw / 2 - 210),
-    y: Math.floor(sh / 2 - 100),
+    y: Math.floor(sh / 2 - 110),
     frame: false,
     transparent: false,
     backgroundColor: '#0d1117',
     resizable: false,
     alwaysOnTop: true,
     skipTaskbar: true,
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -322,16 +322,17 @@ function openPromptWindow() {
       offsetY: settings.offsetY
     });
   });
+  promptWindow.on('closed', () => { promptWindow = null; });
 }
 
 ipcMain.handle('prompt:submit', (event, name) => {
   const trimmed = (name || '').trim();
   if (!trimmed) return { ok: false, error: 'Name required' };
-  if (trimmed.length < 2 || trimmed.length > 30) return { ok: false, error: 'Name 2-30 chars' };
-  if (!/^[a-zA-Z0-9 _\-.]+$/.test(trimmed)) return { ok: false, error: 'Invalid chars' };
+  if (trimmed.length < 2 || trimmed.length > 30) return { ok: false, error: 'Name must be 2-30 chars' };
+  if (!/^[a-zA-Z0-9 _\-.]+$/.test(trimmed)) return { ok: false, error: 'Only letters, numbers, spaces allowed' };
 
   const list = getCustomGamePresets();
-  if (list.length >= 30) return { ok: false, error: 'Max 30 custom game presets' };
+  if (list.length >= 30) return { ok: false, error: 'Max 30 custom presets. Delete some first.' };
   if (list.find(x => x.name.toLowerCase() === trimmed.toLowerCase())) {
     return { ok: false, error: 'Name already exists' };
   }
@@ -453,28 +454,29 @@ ipcMain.handle('profile:delete', (event, name) => {
 });
 ipcMain.handle('profile:list', () => Object.keys(settings.profiles || {}));
 
-// IPC: game presets
+// Verified game presets only. Games listed here have: borderless windowed mode,
+// no 3rd-person camera offset, same aim center for all weapons, no top-bar UI intrusion.
+// Removed: Roblox (varies per experience), Tarkov (weapon zeroing), Hunt (iron sight shift),
+// Forza (not a shooter), Deadlock / Marvel Rivals (3rd-person camera offset).
+// For those games, users manually calibrate + save with Alt+Shift+S as custom preset.
 const GAME_PRESETS = {
   'reset': { offsetX: 0, offsetY: 0, note: 'Reset (no offset)' },
-  'roblox': { offsetX: 0, offsetY: 34, note: 'Roblox windowed (top bar offset)' },
-  'roblox-fullscreen': { offsetX: 0, offsetY: 18, note: 'Roblox fullscreen' },
-  'fortnite': { offsetX: 0, offsetY: 0, note: 'Fortnite borderless' },
-  'apex': { offsetX: 0, offsetY: 0, note: 'Apex Legends' },
   'cs2': { offsetX: 0, offsetY: 0, note: 'Counter-Strike 2' },
+  'fortnite': { offsetX: 0, offsetY: 0, note: 'Fortnite' },
+  'apex': { offsetX: 0, offsetY: 0, note: 'Apex Legends' },
   'warzone': { offsetX: 0, offsetY: 0, note: 'Call of Duty Warzone' },
+  'mw3': { offsetX: 0, offsetY: 0, note: 'Call of Duty MW / BO series' },
   'pubg': { offsetX: 0, offsetY: 0, note: 'PUBG' },
-  'rust': { offsetX: 0, offsetY: 0, note: 'Rust' },
-  'tarkov': { offsetX: 0, offsetY: 0, note: 'Escape from Tarkov' },
-  'sea-of-thieves': { offsetX: 0, offsetY: 0, note: 'Sea of Thieves' },
-  'hunt': { offsetX: 0, offsetY: 0, note: 'Hunt: Showdown' },
-  'battlefield': { offsetX: 0, offsetY: 0, note: 'Battlefield' },
-  'minecraft': { offsetX: 0, offsetY: 0, note: 'Minecraft' },
-  'forza': { offsetX: 0, offsetY: 0, note: 'Forza Horizon 5' },
   'overwatch': { offsetX: 0, offsetY: 0, note: 'Overwatch 2' },
   'r6siege': { offsetX: 0, offsetY: 0, note: 'Rainbow Six Siege' },
   'thefinals': { offsetX: 0, offsetY: 0, note: 'The Finals' },
-  'deadlock': { offsetX: 0, offsetY: 0, note: 'Deadlock' },
-  'marvelrivals': { offsetX: 0, offsetY: 0, note: 'Marvel Rivals' }
+  'rust': { offsetX: 0, offsetY: 0, note: 'Rust' },
+  'battlefield': { offsetX: 0, offsetY: 0, note: 'Battlefield 1/V/2042' },
+  'sea-of-thieves': { offsetX: 0, offsetY: 0, note: 'Sea of Thieves' },
+  'minecraft': { offsetX: 0, offsetY: 0, note: 'Minecraft' },
+  'quake': { offsetX: 0, offsetY: 0, note: 'Quake Champions' },
+  'halo': { offsetX: 0, offsetY: 0, note: 'Halo MCC' },
+  'doom': { offsetX: 0, offsetY: 0, note: 'DOOM Eternal' }
 };
 
 ipcMain.handle('app:applyGamePreset', (event, gameKey) => {

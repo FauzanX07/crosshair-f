@@ -42,7 +42,7 @@ contextBridge.exposeInMainWorld('crosshairAPI', {
   onCalibrationStart: (cb) => ipcRenderer.on('debug:startCalibration', () => cb()),
   onCalibrationCancel: (cb) => ipcRenderer.on('debug:cancelCalibration', () => cb()),
 
- // User custom crosshair library
+  // User custom crosshair library
   saveCustomCrosshair: (data) => ipcRenderer.invoke('custom:save', data),
   listCustomCrosshairs: () => ipcRenderer.invoke('custom:list'),
   deleteCustomCrosshair: (id) => ipcRenderer.invoke('custom:delete', id),
@@ -51,11 +51,11 @@ contextBridge.exposeInMainWorld('crosshairAPI', {
   listCustomGamePresets: () => ipcRenderer.invoke('customGamePreset:list'),
   applyCustomGamePreset: (id) => ipcRenderer.invoke('customGamePreset:apply', id),
   deleteCustomGamePreset: (id) => ipcRenderer.invoke('customGamePreset:delete', id),
-  openGamePresetSaveDialog: () => ipcRenderer.invoke('customGamePreset:openSaveDialog', ),
+  openGamePresetSaveDialog: () => ipcRenderer.invoke('customGamePreset:openSaveDialog'),
   onCustomGamePresetsUpdated: (cb) => ipcRenderer.on('customGamePresets:updated', (e, list) => cb(list)),
   onNotify: (cb) => ipcRenderer.on('notify', (e, msg) => cb(msg)),
 
-  // Prompt window (internal)
+  // Prompt window internal
   promptInit: (cb) => ipcRenderer.on('prompt:init', (e, data) => cb(data)),
   promptSubmit: (name) => ipcRenderer.invoke('prompt:submit', name),
   promptCancel: () => ipcRenderer.invoke('prompt:cancel')

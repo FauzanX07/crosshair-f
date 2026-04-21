@@ -771,49 +771,9 @@ let communityState = {
 };
 
 async function loadCommunityConfig() {
-  const cfg = await api.communityGetConfig();
-  if (cfg) {
-    $('communityEndpoint').value = cfg.endpoint || '';
-    $('communityApiKey').value = cfg.apiKey || '';
-    if (cfg.endpoint && cfg.apiKey) {
-      $('community-disabled-warning').style.display = 'none';
-      $('community-browse-card').style.display = 'block';
-      $('community-upload-card').style.display = 'block';
-      $('community-conn-status').textContent = 'Connected to: ' + cfg.endpoint;
-      $('community-conn-status').style.color = 'var(--accent)';
-      refreshCommunity();
-    }
-  }
-}
-
-$('btn-community-save').addEventListener('click', async () => {
-  const endpoint = $('communityEndpoint').value.trim();
-  const apiKey = $('communityApiKey').value.trim();
-  if (!endpoint || !apiKey) return alert('Both fields required.');
-  if (!endpoint.startsWith('https://')) return alert('Endpoint must start with https://');
-  await api.communityConfig({ endpoint, apiKey });
-  $('community-disabled-warning').style.display = 'none';
-  $('community-browse-card').style.display = 'block';
-  $('community-upload-card').style.display = 'block';
-  $('community-conn-status').textContent = 'Connected.';
-  $('community-conn-status').style.color = 'var(--accent)';
+  // Backend is hardcoded. Just show browse + upload directly and load the list.
   refreshCommunity();
-});
-
-$('btn-community-test').addEventListener('click', async () => {
-  const endpoint = $('communityEndpoint').value.trim();
-  const apiKey = $('communityApiKey').value.trim();
-  if (!endpoint || !apiKey) return alert('Both fields required.');
-  await api.communityConfig({ endpoint, apiKey });
-  const result = await api.communityList({ limit: 1 });
-  if (result.ok) {
-    $('community-conn-status').textContent = 'Connected. Test passed.';
-    $('community-conn-status').style.color = 'var(--accent)';
-  } else {
-    $('community-conn-status').textContent = 'Failed: ' + result.error;
-    $('community-conn-status').style.color = 'var(--danger)';
-  }
-});
+}
 
 async function refreshCommunity() {
   const grid = $('community-grid');

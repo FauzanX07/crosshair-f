@@ -1184,6 +1184,7 @@ input[type="color"]::-webkit-color-swatch { border: none; }
   gap: 10px;
   justify-content: flex-end;
 }
+
 /* ============ CUSTOM GAME PRESETS ============ */
 .custom-game-presets {
   display: flex;
@@ -1193,7 +1194,7 @@ input[type="color"]::-webkit-color-swatch { border: none; }
   margin-top: 10px;
 }
 .custom-game-presets:empty::after {
-  content: 'No custom game presets yet. Save your first one in-game with Alt+Shift+S.';
+  content: 'No custom game presets yet. Adjust position in-game with Alt+Shift+Arrows, then press Alt+Shift+S to save.';
   color: var(--text-muted);
   font-family: var(--mono);
   font-size: 11px;

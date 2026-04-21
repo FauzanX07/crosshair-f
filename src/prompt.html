@@ -84,7 +84,7 @@
 <body>
   <h1>Save Game Preset</h1>
   <div class="sub" id="sub">CURRENT OFFSET · X: 0 · Y: 0</div>
-  <input type="text" id="name" placeholder="e.g. My Fortnite, Roblox Custom, CS2 Crouch..." maxlength="30" autofocus />
+  <input type="text" id="name" placeholder="e.g. My Fortnite, CS2 Crouch, Apex Setup..." maxlength="30" autofocus />
   <div class="err" id="err"></div>
   <div class="btns">
     <button class="ghost" id="cancel">Cancel</button>
@@ -96,9 +96,11 @@
   const err = document.getElementById('err');
   const sub = document.getElementById('sub');
 
-  api.promptInit(data => {
-    sub.textContent = `CURRENT OFFSET · X: ${data.offsetX} · Y: ${data.offsetY}`;
-  });
+  if (api && api.promptInit) {
+    api.promptInit(data => {
+      sub.textContent = `CURRENT OFFSET · X: ${data.offsetX} · Y: ${data.offsetY}`;
+    });
+  }
 
   async function save() {
     const name = input.value.trim();
