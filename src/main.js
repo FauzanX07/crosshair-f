@@ -615,7 +615,14 @@ async function supabaseFetch(urlPath, options = {}) {
     const txt = await res.text();
     throw new Error(`Backend error ${res.status}: ${txt}`);
   }
-  return res.json();
+  // Handle empty response body (e.g. when Prefer: return=minimal is set)
+  const text = await res.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    return null;
+  }
 }
 
 function sanitizeCommunityPreset(preset) {
