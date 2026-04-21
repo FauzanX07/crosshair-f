@@ -63,13 +63,18 @@
     },
     "nsis": {
       "oneClick": false,
+      "perMachine": false,
       "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Crosshair F",
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
-      "include": "build/uninstaller.nsh"
+      "deleteAppDataOnUninstall": false,
+      "include": "build/uninstaller.nsh",
+      "runAfterFinish": true,
+      "warningsAsErrors": false
     },
     "portable": {
       "artifactName": "CrosshairF-Portable.exe"

@@ -833,11 +833,10 @@ async function renderCommunityGrid() {
       <div class="card-menu">
         <button class="card-menu-btn" title="More">⋮</button>
         <div class="card-menu-popover">
-          <button data-act="review">⭐ Rate &amp; Review</button>
-          <button data-act="report" class="danger">🚩 Report</button>
+          <button data-act="review">Rate &amp; Review</button>
+          <button data-act="report" class="danger">Report</button>
         </div>
       </div>
-      ${isInstalled ? '<span class="installed-badge" style="position:absolute;top:8px;left:8px">INSTALLED</span>' : ''}
       <div class="community-preview">${previewSvg}</div>
       <div class="community-meta">
         <div class="community-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
@@ -875,13 +874,12 @@ async function renderCommunityGrid() {
     popover.querySelector('[data-act="report"]').addEventListener('click', async e => {
       e.stopPropagation();
       popover.classList.remove('open');
-      const reason = prompt('Why are you reporting this crosshair? (spam, NSFW, copyrighted, etc.)');
+      const reason = prompt('Why are you reporting this crosshair?\n\nOptions: spam, NSFW, copyrighted, offensive, broken, other');
       if (reason && reason.trim()) {
         const r = await api.communityReport(item.id, reason.trim());
         alert(r.ok ? 'Reported. Thanks for helping keep the community safe.' : 'Report failed: ' + r.error);
       }
     });
-
     // Install button
     const installBtn = card.querySelector('[data-act="install"]');
     if (installBtn) {
@@ -945,8 +943,8 @@ async function refreshInstalledGallery() {
     card.innerHTML = `
       <div class="card-menu">
         <button class="card-menu-btn" title="More">⋮</button>
-        <div class="card-menu-popover">
-          <button data-act="delete" class="danger">🗑 Delete</button>
+       <div class="card-menu-popover">
+          <button data-act="delete" class="danger">Delete</button>
         </div>
       </div>
       <div class="preset-thumb">${previewSvg}</div>
@@ -1211,8 +1209,12 @@ function renderMiniSVG(preset) {
 $('btn-community-refresh').addEventListener('click', () => { communityPage = 0; refreshCommunity(); });
 $('btn-community-prev').addEventListener('click', () => { if (communityPage > 0) { communityPage--; refreshCommunity(); } });
 $('btn-community-next').addEventListener('click', () => { communityPage++; refreshCommunity(); });
-$('community-search').addEventListener('input', debounce(() => {
-  communityState.search = $('community-search').value.trim();
+// Fix first-click focus issue in Electron
+const searchInput = $('community-search');
+searchInput.addEventListener('click', () => searchInput.focus());
+searchInput.addEventListener('focus', () => searchInput.select());
+searchInput.addEventListener('input', debounce(() => {
+  communityState.search = searchInput.value.trim();
   communityPage = 0;
   refreshCommunity();
 }, 400));
