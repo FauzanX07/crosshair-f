@@ -1,0 +1,92 @@
+{
+  "name": "crosshair-f",
+  "version": "1.0.0",
+  "description": "Crosshair F - Custom crosshair overlay for any game. Free, lightweight, no bans.",
+  "main": "src/main.js",
+  "author": {
+    "name": "fauzanx07",
+    "email": "technicgamerz7@gmail.com",
+    "url": "https://github.com/fauzanx07"
+  },
+  "homepage": "https://fauzanx07.github.io/crosshair-f",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fauzanx07/crosshair-f.git"
+  },
+  "bugs": {
+    "url": "https://github.com/fauzanx07/crosshair-f/issues",
+    "email": "technicgamerz7@gmail.com"
+  },
+  "license": "MIT",
+  "copyright": "Copyright © 2026 fauzanx07",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --enable-logging",
+    "build": "electron-builder --win --x64",
+    "build:dir": "electron-builder --win --x64 --dir",
+    "pack": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0"
+  },
+  "build": {
+    "appId": "com.crosshairf.app",
+    "productName": "Crosshair F",
+    "asar": true,
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "crosshairs/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+"win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        },
+        {
+          "target": "appx",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "appx": {
+      "applicationId": "CrosshairF",
+      "identityName": "fauzanx07.CrosshairF",
+      "publisher": "CN=fauzanx07",
+      "publisherDisplayName": "fauzanx07",
+      "displayName": "Crosshair F",
+      "backgroundColor": "#0d1117",
+      "languages": ["en-US"],
+      "showNameOnTiles": true,
+      "addAutoLaunchExtension": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Crosshair F",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico"
+    },
+    "portable": {
+      "artifactName": "CrosshairF-Portable.exe"
+    }
+  }
+}

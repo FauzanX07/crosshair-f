@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Crosshair F Overlay</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+      cursor: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #overlay {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+    }
+    svg {
+      position: absolute;
+      pointer-events: none;
+      will-change: transform;
+    }
+  </style>
+</head>
+<body>
+  <div id="overlay"></div>
+  <script src="overlay.js"></script>
+</body>
+</html>
