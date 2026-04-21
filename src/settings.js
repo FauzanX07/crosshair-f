@@ -5,6 +5,57 @@ const api = window.crosshairAPI;
 let currentSettings = null;
 let displays = [];
 
+// ============ BUILT-IN PRESET LIBRARY ============
+// Inspired by popular pro configs. Categories: pro | classic | scope | creative | neon
+const BUILT_IN_PRESETS = [
+  // Pro Valorant
+  { id:'tenz', name:'TenZ Classic', category:'pro', preset:{ shape:'cross', size:20, thickness:2, gapSize:2, color:'#FFFF00', opacity:100, outline:false, outlineColor:'#000000', outlineThickness:1, centerDot:false, centerDotSize:2, centerDotColor:'#FF0000', rotation:0 } },
+  { id:'scream', name:'ScreaM Dot', category:'pro', preset:{ shape:'dot', size:6, thickness:1, gapSize:0, color:'#00FF00', opacity:100, outline:false, outlineColor:'#000000', outlineThickness:1, centerDot:false, centerDotSize:2, centerDotColor:'#00FF00', rotation:0 } },
+  { id:'shahzam', name:'Shahzam Cyan', category:'pro', preset:{ shape:'cross', size:24, thickness:2, gapSize:3, color:'#00FFFF', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:false, centerDotSize:2, centerDotColor:'#FF0000', rotation:0 } },
+  { id:'aspas', name:'Aspas Purple', category:'pro', preset:{ shape:'plus_dot', size:18, thickness:2, gapSize:2, color:'#A855F7', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:false, centerDotSize:2, centerDotColor:'#A855F7', rotation:0 } },
+  { id:'derke', name:'Derke Green', category:'pro', preset:{ shape:'cross', size:22, thickness:1.5, gapSize:3, color:'#00FF00', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:false, centerDotSize:2, centerDotColor:'#FF0000', rotation:0 } },
+
+  // Pro CS2
+  { id:'s1mple', name:'s1mple Green', category:'pro', preset:{ shape:'cross', size:14, thickness:1, gapSize:2, color:'#50C878', opacity:100, outline:false, outlineColor:'#000000', outlineThickness:1, centerDot:false, centerDotSize:2, centerDotColor:'#FF0000', rotation:0 } },
+  { id:'zywoo', name:'ZywOo Cyan', category:'pro', preset:{ shape:'cross', size:16, thickness:1, gapSize:2, color:'#00FFFF', opacity:100, outline:false, outlineColor:'#000000', outlineThickness:1, centerDot:false, centerDotSize:2, centerDotColor:'#FF0000', rotation:0 } },
+  { id:'niko', name:'NiKo T-Shape', category:'pro', preset:{ shape:'t', size:22, thickness:2, gapSize:3, color:'#FFFFFF', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:true, centerDotSize:1.5, centerDotColor:'#FFFFFF', rotation:0 } },
+  { id:'device', name:'device Static', category:'pro', preset:{ shape:'cross', size:18, thickness:1, gapSize:2, color:'#00FF00', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:true, centerDotSize:1, centerDotColor:'#00FF00', rotation:0 } },
+  { id:'stewie', name:'Stewie2k Dot', category:'pro', preset:{ shape:'dot', size:8, thickness:1, gapSize:0, color:'#FFFF00', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:false, centerDotSize:2, centerDotColor:'#FF0000', rotation:0 } },
+
+  // Classic
+  { id:'dot_only', name:'Classic Dot', category:'classic', preset:{ shape:'dot', size:6, thickness:1, gapSize:0, color:'#00FF00', opacity:100, outline:false, outlineColor:'#000000', outlineThickness:1, centerDot:false, centerDotSize:2, centerDotColor:'#FF0000', rotation:0 } },
+  { id:'classic_plus', name:'Classic Plus', category:'classic', preset:{ shape:'cross', size:24, thickness:2, gapSize:4, color:'#00FF00', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:true, centerDotSize:1, centerDotColor:'#FF0000', rotation:0 } },
+  { id:'thin_cross', name:'Razor Thin', category:'classic', preset:{ shape:'cross', size:20, thickness:1, gapSize:3, color:'#00FF00', opacity:100, outline:false, outlineColor:'#000000', outlineThickness:1, centerDot:false, centerDotSize:2, centerDotColor:'#FF0000', rotation:0 } },
+  { id:'thick_cross', name:'Thick White', category:'classic', preset:{ shape:'cross', size:28, thickness:4, gapSize:5, color:'#FFFFFF', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:2, centerDot:false, centerDotSize:2, centerDotColor:'#FF0000', rotation:0 } },
+  { id:'hollow_white', name:'Hollow Cross', category:'classic', preset:{ shape:'hollow_cross', size:26, thickness:3, gapSize:4, color:'#FFFFFF', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:false, centerDotSize:2, centerDotColor:'#FF0000', rotation:0 } },
+  { id:'pixel_red', name:'Pixel Red', category:'classic', preset:{ shape:'dot', size:4, thickness:1, gapSize:0, color:'#FF0000', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:0.5, centerDot:false, centerDotSize:2, centerDotColor:'#FF0000', rotation:0 } },
+
+  // Scope / Sniper
+  { id:'mil_dot', name:'Sniper Mil-Dot', category:'scope', preset:{ shape:'sniper', size:60, thickness:2, gapSize:6, color:'#00FF00', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:true, centerDotSize:1.5, centerDotColor:'#FF0000', rotation:0 } },
+  { id:'red_dot', name:'Red Dot Sight', category:'scope', preset:{ shape:'circle', size:24, thickness:2, gapSize:0, color:'#FF3030', opacity:100, outline:false, outlineColor:'#000000', outlineThickness:1, centerDot:true, centerDotSize:3, centerDotColor:'#FF3030', rotation:0 } },
+  { id:'holo', name:'Holographic', category:'scope', preset:{ shape:'scope', size:50, thickness:1.5, gapSize:5, color:'#FF3030', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:true, centerDotSize:1.5, centerDotColor:'#FF3030', rotation:0 } },
+  { id:'classic_scope', name:'Classic Scope', category:'scope', preset:{ shape:'scope', size:60, thickness:2, gapSize:6, color:'#00FF00', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:true, centerDotSize:1.5, centerDotColor:'#FF0000', rotation:0 } },
+  { id:'double_ring', name:'Double Ring', category:'scope', preset:{ shape:'double_ring', size:36, thickness:1.5, gapSize:0, color:'#00FFFF', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:true, centerDotSize:2, centerDotColor:'#FF3030', rotation:0 } },
+
+  // Creative
+  { id:'diamond', name:'Diamond', category:'creative', preset:{ shape:'diamond', size:22, thickness:2, gapSize:0, color:'#FFD700', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:true, centerDotSize:1.5, centerDotColor:'#FFD700', rotation:0 } },
+  { id:'x_shape', name:'X Shape', category:'creative', preset:{ shape:'x', size:22, thickness:2, gapSize:3, color:'#FF3030', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:false, centerDotSize:2, centerDotColor:'#FF0000', rotation:0 } },
+  { id:'chevron_up', name:'Chevron', category:'creative', preset:{ shape:'chevron', size:24, thickness:2.5, gapSize:0, color:'#00FF00', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:true, centerDotSize:1, centerDotColor:'#FF0000', rotation:0 } },
+  { id:'corners', name:'Corner Brackets', category:'creative', preset:{ shape:'corners', size:30, thickness:1.5, gapSize:4, color:'#00FFFF', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:true, centerDotSize:1.5, centerDotColor:'#00FFFF', rotation:0 } },
+  { id:'brackets', name:'Square Brackets', category:'creative', preset:{ shape:'brackets', size:26, thickness:2, gapSize:4, color:'#FFFFFF', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:true, centerDotSize:1.5, centerDotColor:'#FF0000', rotation:0 } },
+  { id:'ksight', name:'K-Sight', category:'creative', preset:{ shape:'ksight', size:28, thickness:2, gapSize:0, color:'#00FF00', opacity:100, outline:false, outlineColor:'#000000', outlineThickness:1, centerDot:true, centerDotSize:2, centerDotColor:'#FF0000', rotation:0 } },
+  { id:'triangle', name:'Triangle', category:'creative', preset:{ shape:'triangle', size:22, thickness:2, gapSize:0, color:'#FFFF00', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:true, centerDotSize:1, centerDotColor:'#FFFF00', rotation:0 } },
+  { id:'star', name:'Star', category:'creative', preset:{ shape:'star', size:24, thickness:1.5, gapSize:0, color:'#FFD700', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:false, centerDotSize:2, centerDotColor:'#FFD700', rotation:0 } },
+  { id:'prong3', name:'Triple Prong', category:'creative', preset:{ shape:'prong3', size:24, thickness:2, gapSize:3, color:'#00FF00', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:true, centerDotSize:1.5, centerDotColor:'#FF0000', rotation:0 } },
+  { id:'prong6', name:'Hex Prong', category:'creative', preset:{ shape:'prong6', size:22, thickness:1.5, gapSize:3, color:'#00FFFF', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:true, centerDotSize:1.5, centerDotColor:'#FF0000', rotation:0 } },
+
+  // Neon
+  { id:'neon_pink', name:'Neon Pink', category:'neon', preset:{ shape:'cross', size:22, thickness:2, gapSize:3, color:'#FF00FF', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:true, centerDotSize:1.5, centerDotColor:'#FF00FF', rotation:0 } },
+  { id:'neon_cyan', name:'Electric Cyan', category:'neon', preset:{ shape:'hybrid', size:22, thickness:2, gapSize:2, color:'#00FFFF', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:true, centerDotSize:2, centerDotColor:'#FFFFFF', rotation:0 } },
+  { id:'neon_magenta', name:'Magenta Pop', category:'neon', preset:{ shape:'hybrid', size:24, thickness:2, gapSize:3, color:'#E94D5F', opacity:100, outline:true, outlineColor:'#FFFFFF', outlineThickness:1, centerDot:true, centerDotSize:1.5, centerDotColor:'#FFFFFF', rotation:0 } },
+  { id:'neon_lime', name:'Lime Slash', category:'neon', preset:{ shape:'x', size:20, thickness:2, gapSize:2, color:'#C6FF00', opacity:100, outline:true, outlineColor:'#000000', outlineThickness:1, centerDot:true, centerDotSize:1.5, centerDotColor:'#C6FF00', rotation:0 } }
+];
+
 // ===== Tab navigation =====
 document.querySelectorAll('.nav-item').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -180,6 +231,127 @@ function buildShapeSVG(s) {
         inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${t}" opacity="${s.opacity/100}" />`;
       break;
     }
+    case 'x': {
+      const d = half * 0.707, gd = gap * 0.707;
+      const lines = [[-d,-d,-gd,-gd],[gd,gd,d,d],[-d,d,-gd,gd],[gd,-gd,d,-d]];
+      if (s.outline) for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${outline}" stroke-width="${t + ow*2}" stroke-linecap="round" />`;
+      for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${t}" stroke-linecap="round" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'corners': {
+      const len = half * 0.5;
+      const offset = gap + half * 0.3;
+      const corners = [
+        [[-offset-len,-offset],[-offset,-offset]], [[-offset,-offset-len],[-offset,-offset]],
+        [[offset,-offset],[offset+len,-offset]], [[offset,-offset-len],[offset,-offset]],
+        [[-offset-len,offset],[-offset,offset]], [[-offset,offset],[-offset,offset+len]],
+        [[offset,offset],[offset+len,offset]], [[offset,offset],[offset,offset+len]]
+      ];
+      if (s.outline) for (const [[x1,y1],[x2,y2]] of corners)
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${outline}" stroke-width="${t + ow*2}" />`;
+      for (const [[x1,y1],[x2,y2]] of corners)
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${t}" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'brackets': {
+      const bh = half * 0.6, bw = half * 0.15;
+      const offset = gap + half * 0.2;
+      const lines = [
+        [-offset,-bh,-offset,bh], [-offset,-bh,-offset+bw,-bh], [-offset,bh,-offset+bw,bh],
+        [offset,-bh,offset,bh], [offset,-bh,offset-bw,-bh], [offset,bh,offset-bw,bh]
+      ];
+      if (s.outline) for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${outline}" stroke-width="${t + ow*2}" />`;
+      for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${t}" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'chevron': {
+      const w = half * 0.7, h_ = half * 0.5;
+      const lines = [[-w,h_,0,-h_],[0,-h_,w,h_]];
+      if (s.outline) for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${outline}" stroke-width="${t + ow*2}" stroke-linecap="round" />`;
+      for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${t}" stroke-linecap="round" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'diamond': {
+      const pts = `0,${-half} ${half},0 0,${half} ${-half},0`;
+      if (s.outline) inner += `<polygon points="${pts}" fill="none" stroke="${outline}" stroke-width="${t + ow*2}" />`;
+      inner += `<polygon points="${pts}" fill="none" stroke="${color}" stroke-width="${t}" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'triangle': {
+      const pts = `0,${-half} ${half*0.866},${half*0.5} ${-half*0.866},${half*0.5}`;
+      if (s.outline) inner += `<polygon points="${pts}" fill="none" stroke="${outline}" stroke-width="${t + ow*2}" />`;
+      inner += `<polygon points="${pts}" fill="none" stroke="${color}" stroke-width="${t}" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'star': {
+      const outer = half, innerR = half * 0.4;
+      let pts = '';
+      for (let i=0;i<10;i++) {
+        const r = i%2===0 ? outer : innerR;
+        const a = (Math.PI*2*i)/10 - Math.PI/2;
+        pts += `${(Math.cos(a)*r).toFixed(2)},${(Math.sin(a)*r).toFixed(2)} `;
+      }
+      if (s.outline) inner += `<polygon points="${pts}" fill="none" stroke="${outline}" stroke-width="${t + ow*2}" stroke-linejoin="round" />`;
+      inner += `<polygon points="${pts}" fill="none" stroke="${color}" stroke-width="${t}" stroke-linejoin="round" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'ksight': {
+      if (s.outline) inner += `<line x1="0" y1="${-half}" x2="0" y2="${half}" stroke="${outline}" stroke-width="${t + ow*2}" />`;
+      inner += `<line x1="0" y1="${-half}" x2="0" y2="${half}" stroke="${color}" stroke-width="${t}" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'prong3': {
+      const angles = [-90, 30, 150];
+      const lines = angles.map(a => { const r=(a*Math.PI)/180; return [Math.cos(r)*gap, Math.sin(r)*gap, Math.cos(r)*half, Math.sin(r)*half]; });
+      if (s.outline) for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="${outline}" stroke-width="${t + ow*2}" />`;
+      for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="${color}" stroke-width="${t}" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'prong6': {
+      const angles = [0, 60, 120, 180, 240, 300];
+      const lines = angles.map(a => { const r=(a*Math.PI)/180; return [Math.cos(r)*gap, Math.sin(r)*gap, Math.cos(r)*half, Math.sin(r)*half]; });
+      if (s.outline) for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="${outline}" stroke-width="${t + ow*2}" />`;
+      for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="${color}" stroke-width="${t}" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'double_ring': {
+      const rO = half, rI = half * 0.5;
+      if (s.outline) {
+        inner += `<circle cx="0" cy="0" r="${rO}" fill="none" stroke="${outline}" stroke-width="${t + ow*2}" />`;
+        inner += `<circle cx="0" cy="0" r="${rI}" fill="none" stroke="${outline}" stroke-width="${t + ow*2}" />`;
+      }
+      inner += `<circle cx="0" cy="0" r="${rO}" fill="none" stroke="${color}" stroke-width="${t}" opacity="${s.opacity/100}" />`;
+      inner += `<circle cx="0" cy="0" r="${rI}" fill="none" stroke="${color}" stroke-width="${t}" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'hollow_cross': {
+      const lines = [[0,-gap,0,-half],[0,gap,0,half],[-gap,0,-half,0],[gap,0,half,0]];
+      for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${t + 2}" opacity="${s.opacity/100}" />`;
+      for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${outline === 'none' ? '#000' : outline}" stroke-width="${Math.max(0.5, t - 0.5)}" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'plus_dot': {
+      const lines = [[0,-gap,0,-half],[0,gap,0,half],[-gap,0,-half,0],[gap,0,half,0]];
+      if (s.outline) for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${outline}" stroke-width="${t + ow*2}" />`;
+      for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${t}" opacity="${s.opacity/100}" />`;
+      const dr = Math.max(1.5, t);
+      inner += `<circle cx="0" cy="0" r="${dr}" fill="${color}" opacity="${s.opacity/100}" />`;
+      break;
+    }
   }
 
   if (s.centerDot) {
@@ -272,36 +444,98 @@ $('btn-reset').addEventListener('click', async () => {
 
 $('btn-reset-pos').addEventListener('click', () => update({ offsetX: 0, offsetY: 0 }));
 
-// Game preset dropdown
+// ===== Built-in game preset dropdown =====
 (async function loadGamePresets() {
-  const presets = await api.listGamePresets();
-  const sel = $('gamePreset');
-  for (const p of presets) {
-    const opt = document.createElement('option');
-    opt.value = p.key;
-    opt.textContent = p.label;
-    sel.appendChild(opt);
-  }
+  try {
+    const presets = await api.listGamePresets();
+    const sel = document.getElementById('gamePreset');
+    if (!sel || !presets) return;
+    for (const p of presets) {
+      const opt = document.createElement('option');
+      opt.value = p.key;
+      opt.textContent = p.label;
+      sel.appendChild(opt);
+    }
+  } catch (e) { console.error('loadGamePresets failed', e); }
 })();
 
-$('btn-apply-preset').addEventListener('click', async () => {
-  const key = $('gamePreset').value;
-  if (!key) return alert('Pick a game first.');
-  const r = await api.applyGamePreset(key);
-  if (r.ok) {
-    applyToUI(r.settings);
-    alert(`Applied: ${r.note}`);
-  }
-});
+const btnApplyPreset = document.getElementById('btn-apply-preset');
+if (btnApplyPreset) {
+  btnApplyPreset.addEventListener('click', async () => {
+    const key = document.getElementById('gamePreset').value;
+    if (!key) return alert('Pick a game first.');
+    const r = await api.applyGamePreset(key);
+    if (r.ok) {
+      applyToUI(r.settings);
+      alert(`Applied: ${r.note}`);
+    }
+  });
+}
 
-$('btn-calibrate').addEventListener('click', async () => {
-  await api.startCalibration();
-  alert('Calibration mode active. Switch to your game and click where you want the crosshair. Press Esc to cancel.');
-});
+const btnCalibrate = document.getElementById('btn-calibrate');
+if (btnCalibrate) {
+  btnCalibrate.addEventListener('click', async () => {
+    await api.startCalibration();
+    alert('Calibration mode active. Switch to your game and click where you want the crosshair. Press Esc to cancel.');
+  });
+}
 
-$('btn-debug-grid').addEventListener('click', async () => {
-  await api.toggleDebugGrid();
-});
+const btnDebugGrid = document.getElementById('btn-debug-grid');
+if (btnDebugGrid) {
+  btnDebugGrid.addEventListener('click', async () => {
+    await api.toggleDebugGrid();
+  });
+}
+
+// ===== Custom user-made game presets =====
+async function refreshCustomGamePresets() {
+  try {
+    const list = await api.listCustomGamePresets();
+    const container = document.getElementById('custom-game-presets');
+    if (!container) return;
+    container.innerHTML = '';
+    for (const p of list) {
+      const item = document.createElement('div');
+      item.className = 'cgp-item';
+      item.innerHTML = `
+        <span class="cgp-dot"></span>
+        <div>
+          <div class="cgp-name"></div>
+          <div class="cgp-offset"></div>
+        </div>
+        <button class="btn" data-act="apply">Apply</button>
+        <button class="btn danger" data-act="delete">Delete</button>
+      `;
+      item.querySelector('.cgp-name').textContent = p.name;
+      item.querySelector('.cgp-offset').textContent = `X: ${p.offsetX}px · Y: ${p.offsetY}px`;
+      item.querySelector('[data-act="apply"]').addEventListener('click', async () => {
+        const r = await api.applyCustomGamePreset(p.id);
+        if (r.ok) {
+          applyToUI(r.settings);
+          alert(`Applied: ${p.name}`);
+        }
+      });
+      item.querySelector('[data-act="delete"]').addEventListener('click', async () => {
+        if (!confirm(`Delete "${p.name}"?`)) return;
+        await api.deleteCustomGamePreset(p.id);
+        refreshCustomGamePresets();
+      });
+      container.appendChild(item);
+    }
+  } catch (e) { console.error('refreshCustomGamePresets failed', e); }
+}
+
+const btnSaveGamePreset = document.getElementById('btn-save-game-preset');
+if (btnSaveGamePreset) {
+  btnSaveGamePreset.addEventListener('click', async () => {
+    await api.openGamePresetSaveDialog();
+  });
+}
+
+if (api.onCustomGamePresetsUpdated) api.onCustomGamePresetsUpdated(() => refreshCustomGamePresets());
+if (api.onNotify) api.onNotify(msg => alert(msg));
+
+refreshCustomGamePresets();
 
 $('btn-export').addEventListener('click', () => {
   const blob = new Blob([JSON.stringify(currentSettings, null, 2)], { type: 'application/json' });
@@ -536,12 +770,50 @@ let communityState = {
   search: '', sort: 'popular', filter: '', items: []
 };
 
-let communityLoaded = false;
-async function loadCommunityIfNeeded() {
-  if (communityLoaded) return;
-  communityLoaded = true;
-  refreshCommunity();
+async function loadCommunityConfig() {
+  const cfg = await api.communityGetConfig();
+  if (cfg) {
+    $('communityEndpoint').value = cfg.endpoint || '';
+    $('communityApiKey').value = cfg.apiKey || '';
+    if (cfg.endpoint && cfg.apiKey) {
+      $('community-disabled-warning').style.display = 'none';
+      $('community-browse-card').style.display = 'block';
+      $('community-upload-card').style.display = 'block';
+      $('community-conn-status').textContent = 'Connected to: ' + cfg.endpoint;
+      $('community-conn-status').style.color = 'var(--accent)';
+      refreshCommunity();
+    }
+  }
 }
+
+$('btn-community-save').addEventListener('click', async () => {
+  const endpoint = $('communityEndpoint').value.trim();
+  const apiKey = $('communityApiKey').value.trim();
+  if (!endpoint || !apiKey) return alert('Both fields required.');
+  if (!endpoint.startsWith('https://')) return alert('Endpoint must start with https://');
+  await api.communityConfig({ endpoint, apiKey });
+  $('community-disabled-warning').style.display = 'none';
+  $('community-browse-card').style.display = 'block';
+  $('community-upload-card').style.display = 'block';
+  $('community-conn-status').textContent = 'Connected.';
+  $('community-conn-status').style.color = 'var(--accent)';
+  refreshCommunity();
+});
+
+$('btn-community-test').addEventListener('click', async () => {
+  const endpoint = $('communityEndpoint').value.trim();
+  const apiKey = $('communityApiKey').value.trim();
+  if (!endpoint || !apiKey) return alert('Both fields required.');
+  await api.communityConfig({ endpoint, apiKey });
+  const result = await api.communityList({ limit: 1 });
+  if (result.ok) {
+    $('community-conn-status').textContent = 'Connected. Test passed.';
+    $('community-conn-status').style.color = 'var(--accent)';
+  } else {
+    $('community-conn-status').textContent = 'Failed: ' + result.error;
+    $('community-conn-status').style.color = 'var(--danger)';
+  }
+});
 
 async function refreshCommunity() {
   const grid = $('community-grid');
@@ -668,7 +940,366 @@ $('btn-upload-crosshair').addEventListener('click', async () => {
   }
 });
 
-// Load community on first tab open
+// Hook into the tab nav to load community on first open
 document.querySelector('[data-tab="community"]').addEventListener('click', () => {
-  loadCommunityIfNeeded();
+  loadCommunityConfig();
 });
+
+// Load community config silently on app start
+loadCommunityConfig();
+
+// ============ PRESET GALLERY RENDERING ============
+let currentFilter = 'all';
+let userCustoms = [];
+
+function renderPresetGallery() {
+  const container = $('preset-gallery');
+  if (!container) return;
+  container.innerHTML = '';
+  const items = currentFilter === 'all'
+    ? BUILT_IN_PRESETS
+    : BUILT_IN_PRESETS.filter(p => p.category === currentFilter);
+  for (const p of items) {
+    container.appendChild(makePresetCard(p, false));
+  }
+}
+
+function renderCustomGallery() {
+  const container = $('custom-gallery');
+  if (!container) return;
+  container.innerHTML = '';
+  for (const p of userCustoms) {
+    container.appendChild(makePresetCard(p, true));
+  }
+}
+
+function makePresetCard(p, isCustom) {
+  const card = document.createElement('div');
+  card.className = 'preset-card';
+  card.dataset.id = p.id;
+
+  // Mini SVG preview
+  const previewBox = 120;
+  const pSettings = { ...p.preset };
+  // Scale preset size to fit preview nicely
+  const scale = Math.min(1, 70 / (pSettings.size || 32));
+  const miniPreset = { ...pSettings, size: pSettings.size * scale, thickness: (pSettings.thickness || 2) * scale, gapSize: (pSettings.gapSize || 0) * scale, centerDotSize: (pSettings.centerDotSize || 2) * scale };
+  const box = 100;
+  const svgInner = buildShapeSVG(miniPreset);
+
+  card.innerHTML = `
+    ${isCustom ? '<button class="delete-btn" title="Delete">×</button>' : ''}
+    <div class="preset-thumb">
+      <svg viewBox="${-box/2} ${-box/2} ${box} ${box}" width="100%" height="100%">
+        <g transform="rotate(${pSettings.rotation || 0})">${svgInner}</g>
+      </svg>
+    </div>
+    <div class="preset-name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</div>
+    <div class="preset-cat">${isCustom ? 'CUSTOM' : (p.category || '').toUpperCase()}</div>
+  `;
+
+  card.addEventListener('click', async e => {
+    if (e.target.classList.contains('delete-btn')) return;
+    const s = await api.setSettings(p.preset);
+    applyToUI(s);
+    // Highlight
+    document.querySelectorAll('.preset-card').forEach(c => c.classList.remove('active'));
+    card.classList.add('active');
+  });
+
+  if (isCustom) {
+    card.querySelector('.delete-btn').addEventListener('click', async e => {
+      e.stopPropagation();
+      if (!confirm(`Delete "${p.name}"?`)) return;
+      await api.deleteCustomCrosshair(p.id);
+      userCustoms = userCustoms.filter(x => x.id !== p.id);
+      renderCustomGallery();
+    });
+  }
+
+  return card;
+}
+
+// Filter chips
+document.querySelectorAll('.chip').forEach(c => {
+  c.addEventListener('click', () => {
+    document.querySelectorAll('.chip').forEach(x => x.classList.remove('active'));
+    c.classList.add('active');
+    currentFilter = c.dataset.filter;
+    renderPresetGallery();
+  });
+});
+
+// "Create New" button → jumps to Designer tab
+const btnGoDesigner = $('btn-go-designer');
+if (btnGoDesigner) {
+  btnGoDesigner.addEventListener('click', () => {
+    document.querySelector('[data-tab="designer"]').click();
+    resetDesigner();
+  });
+}
+
+// Load user customs on startup
+async function loadUserCustoms() {
+  userCustoms = await api.listCustomCrosshairs();
+  renderCustomGallery();
+}
+
+// ============ DESIGNER WORKSHOP ============
+let designerState = {
+  shape: 'cross',
+  size: 24,
+  thickness: 2,
+  gapSize: 3,
+  rotation: 0,
+  opacity: 100,
+  color: '#00FF00',
+  outline: true,
+  outlineColor: '#000000',
+  outlineThickness: 1,
+  centerDot: true,
+  centerDotSize: 2,
+  centerDotColor: '#FF0000'
+};
+
+function resetDesigner() {
+  designerState = {
+    shape: 'cross', size: 24, thickness: 2, gapSize: 3, rotation: 0, opacity: 100,
+    color: '#00FF00', outline: true, outlineColor: '#000000', outlineThickness: 1,
+    centerDot: true, centerDotSize: 2, centerDotColor: '#FF0000'
+  };
+  syncDesignerUI();
+}
+
+function syncDesignerUI() {
+  const s = designerState;
+  if (!$('d-size')) return;
+  $('d-size').value = s.size; $('dval-size').textContent = s.size;
+  $('d-thickness').value = s.thickness; $('dval-thickness').textContent = s.thickness;
+  $('d-gap').value = s.gapSize; $('dval-gap').textContent = s.gapSize;
+  $('d-rotation').value = s.rotation; $('dval-rotation').textContent = s.rotation;
+  $('d-opacity').value = s.opacity; $('dval-opacity').textContent = s.opacity;
+  $('d-color').value = s.color; $('d-colorHex').value = s.color.toUpperCase();
+  $('d-outline').checked = s.outline;
+  $('d-outlineColor').value = s.outlineColor; $('d-outlineColorHex').value = s.outlineColor.toUpperCase();
+  $('d-outlineThickness').value = s.outlineThickness; $('dval-outlineThickness').textContent = s.outlineThickness;
+  $('d-centerDot').checked = s.centerDot;
+  $('d-centerDotSize').value = s.centerDotSize; $('dval-centerDotSize').textContent = s.centerDotSize;
+  $('d-centerDotColor').value = s.centerDotColor; $('d-centerDotColorHex').value = s.centerDotColor.toUpperCase();
+  document.querySelectorAll('.base-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.shape === s.shape);
+  });
+  renderWorkshop();
+  validateDesign();
+}
+
+function renderWorkshop() {
+  const canvas = $('workshop-canvas');
+  if (!canvas) return;
+  const s = designerState;
+  const buffer = 30;
+  const box = (s.size || 32) * 2 + buffer;
+  const inner = buildShapeSVG(s);
+  canvas.innerHTML = `<svg width="100%" height="100%" viewBox="${-box/2} ${-box/2} ${box} ${box}"><g transform="rotate(${s.rotation || 0})">${inner}</g></svg>`;
+}
+
+// ============ VALIDATION ============
+function validateDesign() {
+  const s = designerState;
+  const warnings = [];
+  const errors = [];
+
+  // Size sanity
+  if (s.size < 4) errors.push({ text: 'Size too small (minimum 4px)', type: 'error' });
+  else if (s.size > 200) errors.push({ text: 'Size too large (maximum 200px)', type: 'error' });
+  else if (s.size > 120) warnings.push({ text: 'Size is unusually large, may cover important HUD elements', type: 'warn' });
+
+  // Thickness vs size ratio
+  if (s.thickness > s.size / 2) warnings.push({ text: 'Thickness is too large relative to size, shape may look distorted', type: 'warn' });
+
+  // Gap vs size
+  if (s.gapSize > s.size / 2) warnings.push({ text: 'Gap is larger than half the size, arms may disappear', type: 'warn' });
+
+  // Opacity very low
+  if (s.opacity < 25) warnings.push({ text: 'Opacity very low, crosshair may be invisible in-game', type: 'warn' });
+
+  // Outline color same as main color
+  if (s.outline && s.outlineColor.toUpperCase() === s.color.toUpperCase()) {
+    warnings.push({ text: 'Outline color matches main color, outline has no effect', type: 'warn' });
+  }
+
+  // Center dot larger than whole shape
+  if (s.centerDot && s.centerDotSize > s.size / 2) {
+    warnings.push({ text: 'Center dot is larger than shape arms', type: 'warn' });
+  }
+
+  // Shape-specific
+  if (s.shape === 'dot' && s.centerDot && s.centerDotSize >= s.size / 4) {
+    warnings.push({ text: 'Dot shape + center dot overlap, one of them is redundant', type: 'warn' });
+  }
+
+  // Color readability check (very light colors may not show on white backgrounds)
+  const brightness = parseInt(s.color.slice(1, 3), 16) * 0.299 +
+                     parseInt(s.color.slice(3, 5), 16) * 0.587 +
+                     parseInt(s.color.slice(5, 7), 16) * 0.114;
+  if (brightness > 240 && !s.outline) {
+    warnings.push({ text: 'Very bright color without outline may not show on bright game backgrounds', type: 'warn' });
+  }
+  if (brightness < 20 && !s.outline) {
+    warnings.push({ text: 'Very dark color without outline may not show on dark game backgrounds', type: 'warn' });
+  }
+
+  // Render validation panel
+  const panel = $('validation-panel');
+  if (!panel) return;
+  const dot = $('v-status-dot');
+  const text = $('v-status-text');
+  const list = $('validation-list');
+  list.innerHTML = '';
+
+  if (errors.length > 0) {
+    dot.className = 'v-dot error';
+    text.textContent = `${errors.length} error${errors.length>1?'s':''} - fix before saving`;
+  } else if (warnings.length > 0) {
+    dot.className = 'v-dot warn';
+    text.textContent = `${warnings.length} warning${warnings.length>1?'s':''} (OK to save)`;
+  } else {
+    dot.className = 'v-dot';
+    text.textContent = 'All good, ready to save';
+  }
+
+  [...errors, ...warnings].forEach(item => {
+    const li = document.createElement('li');
+    if (item.type === 'error') li.className = 'error';
+    li.textContent = item.text;
+    list.appendChild(li);
+  });
+
+  return errors.length === 0;
+}
+
+// Wire up designer inputs
+function wireDesigner() {
+  const fields = ['size','thickness','gap','rotation','opacity','outlineThickness','centerDotSize'];
+  const mapping = { gap: 'gapSize' };
+  for (const f of fields) {
+    const el = $('d-' + f);
+    if (!el) continue;
+    el.addEventListener('input', e => {
+      const v = parseFloat(e.target.value);
+      designerState[mapping[f] || f] = v;
+      $('dval-' + f).textContent = v;
+      renderWorkshop(); validateDesign();
+    });
+  }
+
+  document.querySelectorAll('.base-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      designerState.shape = b.dataset.shape;
+      document.querySelectorAll('.base-btn').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      renderWorkshop(); validateDesign();
+    });
+  });
+
+  $('d-color').addEventListener('input', e => {
+    designerState.color = e.target.value;
+    $('d-colorHex').value = e.target.value.toUpperCase();
+    renderWorkshop(); validateDesign();
+  });
+  $('d-colorHex').addEventListener('change', e => {
+    if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value.trim())) {
+      designerState.color = e.target.value.trim();
+      $('d-color').value = designerState.color;
+      renderWorkshop(); validateDesign();
+    }
+  });
+  $('d-outlineColor').addEventListener('input', e => {
+    designerState.outlineColor = e.target.value;
+    $('d-outlineColorHex').value = e.target.value.toUpperCase();
+    renderWorkshop(); validateDesign();
+  });
+  $('d-centerDotColor').addEventListener('input', e => {
+    designerState.centerDotColor = e.target.value;
+    $('d-centerDotColorHex').value = e.target.value.toUpperCase();
+    renderWorkshop(); validateDesign();
+  });
+  $('d-outline').addEventListener('change', e => {
+    designerState.outline = e.target.checked;
+    renderWorkshop(); validateDesign();
+  });
+  $('d-centerDot').addEventListener('change', e => {
+    designerState.centerDot = e.target.checked;
+    renderWorkshop(); validateDesign();
+  });
+
+  $('btn-reset-design').addEventListener('click', resetDesigner);
+  $('btn-finish-design').addEventListener('click', async () => {
+    if (!validateDesign()) {
+      alert('Fix the errors before saving. Check the validation panel.');
+      return;
+    }
+    showSaveDialog();
+  });
+}
+
+function showSaveDialog() {
+  const bg = document.createElement('div');
+  bg.className = 'save-dialog-bg';
+  bg.innerHTML = `
+    <div class="save-dialog">
+      <h3>Finish &amp; Save</h3>
+      <p>Give your crosshair a name. It will be saved to "Your Custom Crosshairs".</p>
+      <input type="text" id="save-name-input" placeholder="e.g. My Awesome Crosshair" maxlength="30" autofocus />
+      <div class="actions">
+        <button class="btn ghost" id="save-cancel">Cancel</button>
+        <button class="btn" id="save-confirm">Save</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(bg);
+
+  const input = bg.querySelector('#save-name-input');
+  input.focus();
+
+  const close = () => bg.remove();
+  bg.querySelector('#save-cancel').addEventListener('click', close);
+  bg.addEventListener('click', e => { if (e.target === bg) close(); });
+
+  const save = async () => {
+    const name = input.value.trim();
+    if (!name) return alert('Name is required.');
+    if (name.length < 2) return alert('Name too short (min 2 chars).');
+    if (name.length > 30) return alert('Name too long (max 30 chars).');
+    if (!/^[a-zA-Z0-9 _\-.]+$/.test(name)) return alert('Name can only contain letters, numbers, spaces, dash, underscore, dot.');
+
+    const result = await api.saveCustomCrosshair({
+      name,
+      preset: { ...designerState }
+    });
+    if (result.ok) {
+      userCustoms = result.list;
+      renderCustomGallery();
+      close();
+      alert(`"${name}" saved to Your Custom Crosshairs!`);
+      // Also apply it
+      const s = await api.setSettings(designerState);
+      applyToUI(s);
+    } else {
+      alert('Save failed: ' + result.error);
+    }
+  };
+
+  bg.querySelector('#save-confirm').addEventListener('click', save);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
+}
+
+// Init when Designer tab becomes active
+document.querySelector('[data-tab="designer"]').addEventListener('click', () => {
+  wireDesigner();
+  syncDesignerUI();
+});
+
+// Init presets on page load
+renderPresetGallery();
+loadUserCustoms();

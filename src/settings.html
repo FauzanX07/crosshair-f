@@ -34,8 +34,8 @@
             <circle cx="50" cy="50" r="4" fill="#0d1117" />
           </svg>
         </div>
-<div class="brand-name">
-          <h1>CROSSHAIR<span>F</span><sup class="tm">™</sup></h1>
+        <div class="brand-name">
+          <h1>CROSSHAIR<span>F</span></h1>
           <p>AIM BETTER · WIN MORE</p>
         </div>
       </div>
@@ -112,12 +112,40 @@
       <!-- Tab: STYLE -->
       <section class="tab active" id="tab-style">
         <header class="tab-header">
-          <h2>Crosshair Style</h2>
-          <p>Pick a shape and dial it in. Changes apply live.</p>
+          <h2>Crosshairs</h2>
+          <p>Browse 30+ built-in crosshairs or pick from your saved customs. Click any card to apply instantly.</p>
         </header>
 
         <div class="card">
-          <h3>Shape</h3>
+          <div class="preset-header">
+            <h3>Built-in Presets</h3>
+            <div class="preset-filter">
+              <button class="chip active" data-filter="all">ALL</button>
+              <button class="chip" data-filter="pro">PRO</button>
+              <button class="chip" data-filter="classic">CLASSIC</button>
+              <button class="chip" data-filter="scope">SCOPE</button>
+              <button class="chip" data-filter="creative">CREATIVE</button>
+              <button class="chip" data-filter="neon">NEON</button>
+            </div>
+          </div>
+          <div class="preset-gallery" id="preset-gallery">
+            <!-- populated by JS -->
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="preset-header">
+            <h3>Your Custom Crosshairs</h3>
+            <button class="btn" id="btn-go-designer">+ Create New</button>
+          </div>
+          <div class="preset-gallery" id="custom-gallery">
+            <!-- populated by JS. Empty state shown when no customs saved. -->
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Customize Current Crosshair</h3>
+          <p class="muted">Fine-tune the currently-applied crosshair. Changes apply live.</p>
           <div class="shape-grid" id="shape-grid">
             <button class="shape-btn" data-shape="cross"><div class="shape-thumb">+</div><span>Cross</span></button>
             <button class="shape-btn" data-shape="dot"><div class="shape-thumb">●</div><span>Dot</span></button>
@@ -126,7 +154,20 @@
             <button class="shape-btn" data-shape="hybrid"><div class="shape-thumb">⊕</div><span>Hybrid</span></button>
             <button class="shape-btn" data-shape="scope"><div class="shape-thumb">◎</div><span>Scope</span></button>
             <button class="shape-btn" data-shape="sniper"><div class="shape-thumb">╤</div><span>Sniper</span></button>
-            <button class="shape-btn" data-shape="custom"><div class="shape-thumb">★</div><span>Custom</span></button>
+            <button class="shape-btn" data-shape="x"><div class="shape-thumb">✕</div><span>X</span></button>
+            <button class="shape-btn" data-shape="diamond"><div class="shape-thumb">◇</div><span>Diamond</span></button>
+            <button class="shape-btn" data-shape="triangle"><div class="shape-thumb">△</div><span>Triangle</span></button>
+            <button class="shape-btn" data-shape="star"><div class="shape-thumb">★</div><span>Star</span></button>
+            <button class="shape-btn" data-shape="chevron"><div class="shape-thumb">^</div><span>Chevron</span></button>
+            <button class="shape-btn" data-shape="corners"><div class="shape-thumb">⌐¬</div><span>Corners</span></button>
+            <button class="shape-btn" data-shape="brackets"><div class="shape-thumb">[ ]</div><span>Brackets</span></button>
+            <button class="shape-btn" data-shape="ksight"><div class="shape-thumb">|</div><span>K-Sight</span></button>
+            <button class="shape-btn" data-shape="prong3"><div class="shape-thumb">⅄</div><span>Prong 3</span></button>
+            <button class="shape-btn" data-shape="prong6"><div class="shape-thumb">✱</div><span>Prong 6</span></button>
+            <button class="shape-btn" data-shape="double_ring"><div class="shape-thumb">◎</div><span>Double Ring</span></button>
+            <button class="shape-btn" data-shape="hollow_cross"><div class="shape-thumb">┼</div><span>Hollow +</span></button>
+            <button class="shape-btn" data-shape="plus_dot"><div class="shape-thumb">⊹</div><span>Plus + Dot</span></button>
+            <button class="shape-btn" data-shape="custom"><div class="shape-thumb">★</div><span>Custom Image</span></button>
           </div>
         </div>
 
@@ -230,13 +271,134 @@
       <!-- Tab: DESIGNER -->
       <section class="tab" id="tab-designer">
         <header class="tab-header">
-          <h2>Custom Crosshair Designer</h2>
-          <p>Upload your own PNG/SVG image, or build a crosshair from scratch and export it.</p>
+          <h2>Crosshair Designer</h2>
+          <p>Build your own crosshair from scratch. Pick a base, customize, validate, and save to your library.</p>
         </header>
 
-        <div class="grid-2">
-          <div class="card">
-            <h3>Upload Image</h3>
+        <div class="designer-workshop">
+          <div class="workshop-preview-wrap">
+            <div class="card">
+              <h3>Live Preview</h3>
+              <div class="workshop-preview" id="workshop-preview">
+                <div class="workshop-bg"></div>
+                <div id="workshop-canvas"></div>
+              </div>
+              <div class="validation-panel" id="validation-panel">
+                <div class="validation-header">
+                  <span class="v-dot" id="v-status-dot"></span>
+                  <span id="v-status-text">Looks good</span>
+                </div>
+                <ul class="validation-list" id="validation-list"></ul>
+              </div>
+              <div class="actions" style="margin-top:14px">
+                <button class="btn" id="btn-finish-design" style="flex:1">✓ FINISH &amp; SAVE</button>
+                <button class="btn ghost" id="btn-reset-design">Reset</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="workshop-controls">
+            <div class="card">
+              <h3>1. Pick Base Shape</h3>
+              <div class="base-grid" id="base-grid">
+                <button class="base-btn active" data-shape="cross">Cross</button>
+                <button class="base-btn" data-shape="dot">Dot</button>
+                <button class="base-btn" data-shape="circle">Circle</button>
+                <button class="base-btn" data-shape="t">T</button>
+                <button class="base-btn" data-shape="x">X</button>
+                <button class="base-btn" data-shape="diamond">Diamond</button>
+                <button class="base-btn" data-shape="triangle">Triangle</button>
+                <button class="base-btn" data-shape="star">Star</button>
+                <button class="base-btn" data-shape="chevron">Chevron</button>
+                <button class="base-btn" data-shape="corners">Corners</button>
+                <button class="base-btn" data-shape="brackets">Brackets</button>
+                <button class="base-btn" data-shape="ksight">K-Sight</button>
+                <button class="base-btn" data-shape="prong3">3-Prong</button>
+                <button class="base-btn" data-shape="prong6">6-Prong</button>
+                <button class="base-btn" data-shape="scope">Scope</button>
+                <button class="base-btn" data-shape="sniper">Sniper</button>
+                <button class="base-btn" data-shape="hybrid">Hybrid</button>
+                <button class="base-btn" data-shape="double_ring">2 Rings</button>
+                <button class="base-btn" data-shape="hollow_cross">Hollow +</button>
+                <button class="base-btn" data-shape="plus_dot">+ Dot</button>
+              </div>
+            </div>
+
+            <div class="card">
+              <h3>2. Size &amp; Geometry</h3>
+              <div class="row">
+                <label>Size <span class="val" id="dval-size">24</span>px</label>
+                <input type="range" id="d-size" min="4" max="200" value="24" />
+              </div>
+              <div class="row">
+                <label>Thickness <span class="val" id="dval-thickness">2</span>px</label>
+                <input type="range" id="d-thickness" min="0.5" max="20" step="0.5" value="2" />
+              </div>
+              <div class="row">
+                <label>Center Gap <span class="val" id="dval-gap">3</span>px</label>
+                <input type="range" id="d-gap" min="0" max="60" value="3" />
+              </div>
+              <div class="row">
+                <label>Rotation <span class="val" id="dval-rotation">0</span>°</label>
+                <input type="range" id="d-rotation" min="0" max="359" value="0" />
+              </div>
+              <div class="row">
+                <label>Opacity <span class="val" id="dval-opacity">100</span>%</label>
+                <input type="range" id="d-opacity" min="10" max="100" value="100" />
+              </div>
+            </div>
+
+            <div class="card">
+              <h3>3. Color</h3>
+              <div class="row color-row">
+                <label>Main Color</label>
+                <div class="color-input-wrap">
+                  <input type="color" id="d-color" value="#00FF00" />
+                  <input type="text" id="d-colorHex" value="#00FF00" maxlength="7" />
+                </div>
+              </div>
+              <div class="row toggle-row">
+                <label for="d-outline">Outline</label>
+                <input type="checkbox" id="d-outline" />
+              </div>
+              <div class="row color-row">
+                <label>Outline Color</label>
+                <div class="color-input-wrap">
+                  <input type="color" id="d-outlineColor" value="#000000" />
+                  <input type="text" id="d-outlineColorHex" value="#000000" maxlength="7" />
+                </div>
+              </div>
+              <div class="row">
+                <label>Outline Thickness <span class="val" id="dval-outlineThickness">1</span>px</label>
+                <input type="range" id="d-outlineThickness" min="0.5" max="6" step="0.5" value="1" />
+              </div>
+            </div>
+
+            <div class="card">
+              <h3>4. Center Dot</h3>
+              <div class="row toggle-row">
+                <label for="d-centerDot">Show center dot</label>
+                <input type="checkbox" id="d-centerDot" />
+              </div>
+              <div class="row">
+                <label>Dot Size <span class="val" id="dval-centerDotSize">2</span>px</label>
+                <input type="range" id="d-centerDotSize" min="0.5" max="20" step="0.5" value="2" />
+              </div>
+              <div class="row color-row">
+                <label>Dot Color</label>
+                <div class="color-input-wrap">
+                  <input type="color" id="d-centerDotColor" value="#FF0000" />
+                  <input type="text" id="d-centerDotColorHex" value="#FF0000" maxlength="7" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Upload Custom Image (Advanced)</h3>
+          <p class="muted">Want to use your own artwork as a crosshair? Drop a PNG or SVG here. Transparent backgrounds work best.</p>
+          <div class="grid-2">
             <div class="dropzone" id="dropzone">
               <div class="dropzone-icon">⬆</div>
               <div>Drop a PNG or SVG here</div>
@@ -244,28 +406,20 @@
               <button class="btn" id="btn-choose-file">Choose File</button>
               <input type="file" id="custom-file" accept="image/png,image/svg+xml" hidden />
             </div>
-            <div class="row" style="margin-top:16px">
-              <label>Custom Image Size <span class="val" id="val-customSize">64</span>px</label>
-              <input type="range" id="customSize" min="8" max="300" value="64" />
+            <div>
+              <div class="row">
+                <label>Custom Image Size <span class="val" id="val-customSize">64</span>px</label>
+                <input type="range" id="customSize" min="8" max="300" value="64" />
+              </div>
+              <button class="btn ghost" id="btn-clear-custom">Remove custom image</button>
+              <p class="muted" style="margin-top:10px">Custom images cannot be uploaded to Community for safety reasons.</p>
             </div>
-            <button class="btn ghost" id="btn-clear-custom">Remove custom image</button>
-          </div>
-
-          <div class="card">
-            <h3>Designer Tips</h3>
-            <ul class="tips">
-              <li>Use a transparent PNG so it blends with any game background.</li>
-              <li>Recommended size: square images, 64x64 to 256x256 pixels.</li>
-              <li>SVG works best, scales without losing sharpness.</li>
-              <li>Once uploaded, switch shape to <strong>Custom</strong> in the Style tab.</li>
-              <li>You can save the current setup as a Profile for each game you play.</li>
-            </ul>
           </div>
         </div>
 
         <div class="card">
           <h3>Export current crosshair</h3>
-          <p class="muted">Save your built-in shape as a PNG for backup or sharing.</p>
+          <p class="muted">Save your built-in shape as a PNG or SVG for backup or sharing outside the app.</p>
           <div class="actions">
             <button class="btn" id="btn-export-png">Export as PNG</button>
             <button class="btn" id="btn-export-svg">Export as SVG</button>
@@ -303,7 +457,25 @@
           <p>Browse and download crosshairs shared by other players. Upload yours for the world to use.</p>
         </header>
 
-        <div class="card" id="community-browse-card">
+        <div class="card community-status" id="community-status">
+          <h3>Backend Connection</h3>
+          <p class="muted">Server status and configuration.</p>
+          <div class="row">
+            <label>API Endpoint</label>
+            <input type="text" id="communityEndpoint" placeholder="https://your-supabase-project.supabase.co" />
+          </div>
+          <div class="row">
+            <label>Public API Key (anon)</label>
+            <input type="text" id="communityApiKey" placeholder="eyJhbGciOi..." />
+          </div>
+          <div class="actions">
+            <button class="btn" id="btn-community-save">Save &amp; Connect</button>
+            <button class="btn ghost" id="btn-community-test">Test Connection</button>
+          </div>
+          <p class="muted" id="community-conn-status" style="margin-top:10px">Not connected. See README.md → "Community Backend Setup" to host your own (free).</p>
+        </div>
+
+        <div class="card" id="community-browse-card" style="display:none">
           <h3>Browse Community</h3>
           <div class="community-toolbar">
             <input type="text" id="community-search" placeholder="Search by name, game, author..." />
@@ -335,7 +507,7 @@
           </div>
         </div>
 
-        <div class="card" id="community-upload-card">
+        <div class="card" id="community-upload-card" style="display:none">
           <h3>Share your crosshair</h3>
           <p class="muted">Upload your current crosshair so other players can use it.</p>
           <div class="grid-2">
@@ -379,6 +551,17 @@
           </div>
         </div>
 
+        <div class="card warning" id="community-disabled-warning">
+          <h3>Quick start</h3>
+          <p>The community feature needs a backend. We use <strong>Supabase</strong> (free tier, hosts up to 50,000 users free) so anyone can self-host without paying.</p>
+          <ol class="tips" style="margin-top:10px">
+            <li>Sign up at supabase.com (uses your Gmail, free)</li>
+            <li>Create a new project, copy the URL and anon key</li>
+            <li>Run the SQL setup script from <code>community/setup.sql</code></li>
+            <li>Paste the URL + key above and click Save</li>
+          </ol>
+          <p class="muted" style="margin-top:8px">Full step by step in <code>community/README.md</code> in the project folder.</p>
+        </div>
       </section>
 
       <!-- Tab: HOTKEYS -->
@@ -429,8 +612,8 @@
           </div>
         </div>
 
-<div class="card">
-          <h3>Quick Game Preset</h3>
+        <div class="card">
+          <h3>Built-in Game Presets</h3>
           <p class="muted">Auto-set offset for popular games. Roblox especially needs this because of its top bar.</p>
           <div class="row inline">
             <select id="gamePreset" class="select" style="flex:1">
@@ -441,8 +624,19 @@
         </div>
 
         <div class="card">
+          <div class="preset-header">
+            <h3>Your Custom Game Presets</h3>
+            <button class="btn" id="btn-save-game-preset">+ Save Current Position</button>
+          </div>
+          <p class="muted">Adjust position with Alt+Shift+Arrows in-game, then press <strong>Alt+Shift+S</strong> (or the button above) to save it as a named preset for any game.</p>
+          <div class="custom-game-presets" id="custom-game-presets">
+            <!-- populated by JS -->
+          </div>
+        </div>
+
+        <div class="card">
           <h3>Position Offset</h3>
-          <p class="muted">Manually adjust crosshair position. Use Calibrate Mode for one-click setup, or Alt+Shift+Arrow keys to nudge while in-game.</p>
+          <p class="muted">Manually adjust crosshair position. Use Alt+Shift+Arrow keys to nudge 1px at a time in-game, or Ctrl+Alt+Shift+Arrow for 10px steps.</p>
           <div class="grid-2">
             <div class="row">
               <label>Horizontal Offset <span class="val" id="val-offsetX">0</span>px</label>
@@ -457,12 +651,6 @@
             <button class="btn" id="btn-calibrate">Calibrate (click to set)</button>
             <button class="btn ghost" id="btn-debug-grid">Toggle Debug Grid</button>
             <button class="btn ghost" id="btn-reset-pos">Reset to center</button>
-          </div>
-          <div class="upload-info" style="margin-top:14px">
-            <p class="muted"><strong>In-game hotkeys (always work):</strong><br>
-            Alt+Shift+Arrow = nudge 1px<br>
-            Ctrl+Alt+Shift+Arrow = nudge 10px<br>
-            Alt+Shift+G = toggle debug grid</p>
           </div>
         </div>
 
@@ -489,136 +677,28 @@
           <h2>Help &amp; About</h2>
         </header>
 
-<div class="card danger">
-          <h3>⚠ READ THIS BEFORE USING IN ONLINE GAMES</h3>
-          <p><strong>USE AT YOUR OWN RISK.</strong> By using Crosshair F you agree that:</p>
-          <ul class="tips" style="margin-top:10px">
-            <li>You take FULL responsibility for any account action taken against you by any game</li>
-            <li>Crosshair F developers are NOT liable for bans, suspensions, or warnings from any game</li>
-            <li>You acknowledge each game has its own overlay policy and you have read your game's terms before use</li>
-            <li>Some games (Valorant, certain ranked/tournament modes) prohibit ALL overlays including Discord and Steam, not just ours</li>
-            <li>If a game's anti-cheat blocks Crosshair F or your account, that is between you and the game publisher</li>
-          </ul>
-          <p style="margin-top:10px"><strong>WE WARNED YOU. THE BLAME IS NOT ON US.</strong></p>
-        </div>
-
-        <div class="card danger">
-          <h3>Games where Crosshair F WILL get you in trouble</h3>
-          <p>Do NOT use Crosshair F in these games or modes:</p>
-          <ul class="tips" style="margin-top:10px">
-            <li><strong>Valorant</strong> - Vanguard kernel anti-cheat blocks ALL overlays. Game won't even launch with Crosshair F running.</li>
-            <li><strong>Faceit / ESEA tournament matches (CS2)</strong> - their anti-cheat flags external overlays</li>
-            <li><strong>PUBG ranked / esports mode</strong> - tournament rules ban overlays</li>
-            <li><strong>Fortnite Champion League / FNCS</strong> - competitive cup rules may prohibit overlays</li>
-            <li><strong>Any tournament play with prize money</strong> - check the rules first</li>
-          </ul>
-          <p class="muted" style="margin-top:10px">For these games, EXIT Crosshair F from system tray before launching. Casual / ranked matchmaking in most games is fine.</p>
-        </div>
-
         <div class="card warning">
-          <h3>Games where Crosshair F works fine</h3>
-          <p>Tested and confirmed working in casual play:</p>
-          <p class="muted" style="margin-top:8px">Fortnite (casual/ranked), Apex Legends, CS2 (matchmaking), Warzone, PUBG (casual), Rust, DayZ, The Finals, Rainbow Six Siege, Overwatch 2, Marvel Rivals, Deadlock, Tarkov (single-player), Hunt: Showdown, Battlefield series, COD MW2/MW3/BO6, Sea of Thieves, Forza Horizon 5, Roblox (with the Roblox preset applied), Minecraft, GTA V, RDR2, Cyberpunk 2077, and any other game running borderless windowed mode.</p>
-          <p class="muted" style="margin-top:8px">If your game runs in borderless windowed and doesn't use Vanguard, it works. Period.</p>
-        </div>
-
-        <div class="card warning">
-          <h3>Fullscreen mode (must read)</h3>
-          <p>Crosshair F works perfectly in <strong>borderless windowed</strong> mode. Most modern games support this and it gives the same FPS as exclusive fullscreen.</p>
-          <p>In <strong>exclusive fullscreen</strong>, NO overlay can render on top without injecting code into the game, which gets you banned. We do not do that.</p>
-          <p><strong>Fix:</strong> open your game's video settings and switch from "Fullscreen" to "Borderless Windowed" or "Windowed Fullscreen". Zero performance loss on Windows 10/11.</p>
+          <h3>Fullscreen mode (read this)</h3>
+          <p>Crosshair F works perfectly in <strong>borderless windowed</strong> mode. Most modern games support this and it gives the same FPS as exclusive fullscreen with zero downside.</p>
+          <p>If your game is in <strong>exclusive fullscreen</strong>, no overlay (Discord, Steam, CrosshairX, V2, this one, none) can render on top without injecting code into the game, which gets you banned. So we do not do that.</p>
+          <p><strong>Fix:</strong> open your game's video settings and switch from "Fullscreen" to "Borderless Windowed" or "Windowed Fullscreen". You will not lose any performance.</p>
         </div>
 
         <div class="card">
-          <h3>How Crosshair F works (technical)</h3>
+          <h3>Why Crosshair F is safe (no bans)</h3>
           <ul class="tips">
             <li>Does NOT inject into game processes</li>
             <li>Does NOT read game memory</li>
             <li>Does NOT hook keyboard or mouse input</li>
-            <li>Just a transparent always-on-top window, same category as Discord overlay or your taskbar clock</li>
-            <li>Most anti-cheats (VAC, EAC, BattlEye) do not flag it</li>
-            <li>Vanguard (Valorant) blocks ALL overlays as policy, not because we do anything wrong</li>
+            <li>Just a transparent always-on-top window, same as Discord overlay or your taskbar</li>
+            <li>Anti-cheats (VAC, EAC, BattlEye, Vanguard) do not flag it</li>
           </ul>
-        </div>
-        <div class="card">
-          <h3>How Crosshair F works (technical)</h3>
-          <ul class="tips">
-            <li>Does NOT inject into game processes</li>
-            <li>Does NOT read game memory</li>
-            <li>Does NOT hook keyboard or mouse input</li>
-            <li>Just a transparent always-on-top window, same category as Discord overlay or your taskbar clock</li>
-            <li>Most anti-cheats (VAC, EAC, BattlEye) do not flag it</li>
-            <li>Vanguard (Valorant) blocks ALL overlays as policy, not because we do anything wrong</li>
-          </ul>
+          <p class="muted" style="margin-top:8px">Note: even though the app itself is safe, some games (like Valorant with Vanguard) restrict ALL overlays as policy. Check your game's overlay policy.</p>
         </div>
 
         <div class="card">
-          <h3>Terms of Service</h3>
-          <p class="muted">Last updated: April 2026</p>
-          <ul class="tips" style="margin-top:10px">
-            <li><strong>License:</strong> Crosshair F is provided free of charge under the MIT License. You may use, copy, modify, and distribute it as the license permits.</li>
-            <li><strong>"As is" basis:</strong> The software is provided WITHOUT WARRANTY of any kind. The authors are not liable for any damages arising from its use.</li>
-            <li><strong>Account responsibility:</strong> You are solely responsible for any consequences in any third-party game, service, or platform from using this software. Read each game's overlay policy before use.</li>
-            <li><strong>No cheating intended:</strong> Crosshair F is a visual aid, the same as a built-in monitor crosshair. It does not provide any in-game advantage like aimbot, wallhack, or memory reading.</li>
-            <li><strong>Community uploads:</strong> By uploading a crosshair preset to the community, you grant other users permission to download and use it. You confirm the upload is your original work or appropriately licensed.</li>
-            <li><strong>Prohibited content:</strong> Do not upload presets with offensive names, copyrighted symbols, hate speech, or NSFW content. Violations result in IP ban.</li>
-            <li><strong>Age:</strong> You must be 13 or older to use community features.</li>
-            <li><strong>Changes:</strong> These terms may be updated. Continued use means acceptance of new terms.</li>
-          </ul>
-        </div>
-
-        <div class="card">
-          <h3>Privacy Policy</h3>
-          <p class="muted">Last updated: April 2026</p>
-          <ul class="tips" style="margin-top:10px">
-            <li><strong>What we collect on your device:</strong> Your crosshair settings and saved profiles, stored locally only.</li>
-            <li><strong>What we send to servers:</strong> Nothing, unless you use the Community feature. Then we send: the crosshair preset you upload, your chosen tag (which you make up, no real name), and basic metadata (game category, tags).</li>
-            <li><strong>What we do NOT collect:</strong> Your real name, email, IP address (server logs only retained for spam prevention, deleted in 30 days), gameplay data, screenshots, keystrokes, or any personal information.</li>
-            <li><strong>Telemetry:</strong> NONE. The app does not phone home, track usage, or report analytics.</li>
-            <li><strong>Third-party services:</strong> Community feature uses Supabase (database) and optionally VirusTotal (image scanning). These services have their own privacy policies.</li>
-            <li><strong>Your rights:</strong> You can request deletion of any community upload by reporting it from the app, or by emailing the maintainer.</li>
-            <li><strong>Children:</strong> We do not knowingly collect data from users under 13.</li>
-          </ul>
-        </div>
-
-        <div class="card">
-          <h3>Copyright &amp; Trademarks</h3>
-          <p>Crosshair F is © 2026 fauzanx07. Source code released under MIT License.</p>
-          <p style="margin-top:10px"><strong>Trademark notice:</strong></p>
-          <ul class="tips" style="margin-top:8px">
-            <li>"Crosshair F" name and logo are trademarks of the developer.</li>
-            <li>"Roblox" is a trademark of Roblox Corporation. Crosshair F is not affiliated with, endorsed by, or sponsored by Roblox Corporation.</li>
-            <li>"Fortnite" is a trademark of Epic Games. Crosshair F is not affiliated with Epic Games.</li>
-            <li>"Counter-Strike", "CS2", "Steam" are trademarks of Valve Corporation. Not affiliated.</li>
-            <li>"Apex Legends" is a trademark of Electronic Arts / Respawn. Not affiliated.</li>
-            <li>"Call of Duty", "Warzone" are trademarks of Activision. Not affiliated.</li>
-            <li>"Valorant", "Vanguard" are trademarks of Riot Games. Not affiliated.</li>
-            <li>All other game names, logos, and trademarks are the property of their respective owners and are mentioned only for compatibility reference.</li>
-          </ul>
-          <p class="muted" style="margin-top:10px">If you are a trademark owner and want your reference removed, contact the maintainer.</p>
-        </div>
-
-        <div class="card">
-          <h3>Open Source &amp; Credits</h3>
-          <p>Crosshair F is built with:</p>
-          <ul class="tips" style="margin-top:8px">
-            <li><strong>Electron</strong> (MIT) - desktop app framework</li>
-            <li><strong>electron-store</strong> (MIT) - settings persistence</li>
-            <li><strong>electron-builder</strong> (MIT) - packaging</li>
-            <li><strong>Supabase</strong> (Apache 2.0) - community backend</li>
-            <li><strong>Rajdhani</strong>, <strong>Outfit</strong>, <strong>JetBrains Mono</strong> fonts (Open Font License)</li>
-          </ul>
-          <p style="margin-top:10px">Source code: see project repository</p>
-        </div>
-
-<div class="card">
-          <h3>Contact &amp; Reports</h3>
-          <p>To report a bug, request a feature, report copyright infringement, request data deletion, or report malicious community content:</p>
-          <p style="margin-top:8px"><strong>GitHub Issues:</strong> <a href="#" onclick="window.crosshairAPI.openExternal('https://github.com/fauzanx07/crosshair-f/issues');return false;" style="color:var(--accent)">github.com/fauzanx07/crosshair-f/issues</a></p>
-          <p><strong>Email:</strong> technicgamerz7@gmail.com</p>
-          <p><strong>Privacy Policy:</strong> <a href="#" onclick="window.crosshairAPI.openExternal('https://fauzanx07.github.io/crosshair-f/privacy.html');return false;" style="color:var(--accent)">fauzanx07.github.io/crosshair-f/privacy.html</a></p>
-          <p><strong>Terms of Service:</strong> <a href="#" onclick="window.crosshairAPI.openExternal('https://fauzanx07.github.io/crosshair-f/terms.html');return false;" style="color:var(--accent)">fauzanx07.github.io/crosshair-f/terms.html</a></p>
-          <p class="muted" style="margin-top:10px">Response time: usually within 7 days. Critical security issues prioritized.</p>
+          <h3>Tested with</h3>
+          <p class="muted">Fortnite, Apex Legends, CS2, Warzone, PUBG, Battlefield, Sea of Thieves, Hunt: Showdown, Tarkov (single-player only), Forza Horizon 5, Minecraft, and any game running borderless windowed.</p>
         </div>
 
         <div class="card">

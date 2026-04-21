@@ -140,6 +140,183 @@ function buildShape(s) {
       // handled separately below, return empty
       break;
     }
+    case 'x': {
+      // X shape (rotated cross)
+      const d = half * 0.707; // diagonal component
+      const gd = gap * 0.707;
+      const lines = [
+        [-d, -d, -gd, -gd], [gd, gd, d, d],
+        [-d, d, -gd, gd], [gd, -gd, d, -d]
+      ];
+      if (s.outline) for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${outline}" stroke-width="${t + ow*2}" stroke-linecap="round" />`;
+      for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${t}" stroke-linecap="round" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'corners': {
+      // 4 L-brackets around center
+      const len = half * 0.5;
+      const offset = gap + half * 0.3;
+      const corners = [
+        // top-left
+        [[-offset - len, -offset], [-offset, -offset]],
+        [[-offset, -offset - len], [-offset, -offset]],
+        // top-right
+        [[offset, -offset], [offset + len, -offset]],
+        [[offset, -offset - len], [offset, -offset]],
+        // bottom-left
+        [[-offset - len, offset], [-offset, offset]],
+        [[-offset, offset], [-offset, offset + len]],
+        // bottom-right
+        [[offset, offset], [offset + len, offset]],
+        [[offset, offset], [offset, offset + len]]
+      ];
+      if (s.outline) for (const [[x1,y1],[x2,y2]] of corners)
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${outline}" stroke-width="${t + ow*2}" stroke-linecap="square" />`;
+      for (const [[x1,y1],[x2,y2]] of corners)
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${t}" stroke-linecap="square" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'brackets': {
+      // [ ] around center
+      const bh = half * 0.6;
+      const bw = half * 0.15;
+      const offset = gap + half * 0.2;
+      const lines = [
+        // left bracket
+        [-offset, -bh, -offset, bh],
+        [-offset, -bh, -offset + bw, -bh],
+        [-offset, bh, -offset + bw, bh],
+        // right bracket
+        [offset, -bh, offset, bh],
+        [offset, -bh, offset - bw, -bh],
+        [offset, bh, offset - bw, bh]
+      ];
+      if (s.outline) for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${outline}" stroke-width="${t + ow*2}" stroke-linecap="square" />`;
+      for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${t}" stroke-linecap="square" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'chevron': {
+      // ^ pointing up
+      const w = half * 0.7;
+      const h_ = half * 0.5;
+      const lines = [
+        [-w, h_, 0, -h_],
+        [0, -h_, w, h_]
+      ];
+      if (s.outline) for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${outline}" stroke-width="${t + ow*2}" stroke-linecap="round" />`;
+      for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${t}" stroke-linecap="round" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'diamond': {
+      const pts = `0,${-half} ${half},0 0,${half} ${-half},0`;
+      if (s.outline) inner += `<polygon points="${pts}" fill="none" stroke="${outline}" stroke-width="${t + ow*2}" stroke-linejoin="miter" />`;
+      inner += `<polygon points="${pts}" fill="none" stroke="${color}" stroke-width="${t}" stroke-linejoin="miter" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'triangle': {
+      // Triangle pointing up
+      const pts = `0,${-half} ${half * 0.866},${half * 0.5} ${-half * 0.866},${half * 0.5}`;
+      if (s.outline) inner += `<polygon points="${pts}" fill="none" stroke="${outline}" stroke-width="${t + ow*2}" stroke-linejoin="miter" />`;
+      inner += `<polygon points="${pts}" fill="none" stroke="${color}" stroke-width="${t}" stroke-linejoin="miter" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'star': {
+      // 5-pointed star
+      const outer = half;
+      const innerR = half * 0.4;
+      let pts = '';
+      for (let i = 0; i < 10; i++) {
+        const r = i % 2 === 0 ? outer : innerR;
+        const angle = (Math.PI * 2 * i) / 10 - Math.PI / 2;
+        const x = Math.cos(angle) * r;
+        const y = Math.sin(angle) * r;
+        pts += `${x.toFixed(2)},${y.toFixed(2)} `;
+      }
+      if (s.outline) inner += `<polygon points="${pts}" fill="none" stroke="${outline}" stroke-width="${t + ow*2}" stroke-linejoin="round" />`;
+      inner += `<polygon points="${pts}" fill="none" stroke="${color}" stroke-width="${t}" stroke-linejoin="round" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'ksight': {
+      // Single vertical line (K-sight style)
+      if (s.outline) inner += `<line x1="0" y1="${-half}" x2="0" y2="${half}" stroke="${outline}" stroke-width="${t + ow*2}" stroke-linecap="square" />`;
+      inner += `<line x1="0" y1="${-half}" x2="0" y2="${half}" stroke="${color}" stroke-width="${t}" stroke-linecap="square" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'prong3': {
+      // 3 arms at 120°
+      const angles = [-90, 30, 150]; // degrees
+      const lines = angles.map(a => {
+        const rad = (a * Math.PI) / 180;
+        return [Math.cos(rad) * gap, Math.sin(rad) * gap, Math.cos(rad) * half, Math.sin(rad) * half];
+      });
+      if (s.outline) for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="${outline}" stroke-width="${t + ow*2}" stroke-linecap="square" />`;
+      for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="${color}" stroke-width="${t}" stroke-linecap="square" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'prong6': {
+      // 6 arms at 60° (snowflake / hex)
+      const angles = [0, 60, 120, 180, 240, 300];
+      const lines = angles.map(a => {
+        const rad = (a * Math.PI) / 180;
+        return [Math.cos(rad) * gap, Math.sin(rad) * gap, Math.cos(rad) * half, Math.sin(rad) * half];
+      });
+      if (s.outline) for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="${outline}" stroke-width="${t + ow*2}" stroke-linecap="square" />`;
+      for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="${color}" stroke-width="${t}" stroke-linecap="square" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'double_ring': {
+      // Two concentric circles
+      const rOuter = half;
+      const rInner = half * 0.5;
+      if (s.outline) {
+        inner += `<circle cx="0" cy="0" r="${rOuter}" fill="none" stroke="${outline}" stroke-width="${t + ow*2}" />`;
+        inner += `<circle cx="0" cy="0" r="${rInner}" fill="none" stroke="${outline}" stroke-width="${t + ow*2}" />`;
+      }
+      inner += `<circle cx="0" cy="0" r="${rOuter}" fill="none" stroke="${color}" stroke-width="${t}" opacity="${s.opacity/100}" />`;
+      inner += `<circle cx="0" cy="0" r="${rInner}" fill="none" stroke="${color}" stroke-width="${t}" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'hollow_cross': {
+      // Cross outline only (double line with hollow interior)
+      const lines = [
+        [0, -gap, 0, -half], [0, gap, 0, half],
+        [-gap, 0, -half, 0], [gap, 0, half, 0]
+      ];
+      // Draw thicker outline first, then same color as bg inside to create hollow effect
+      for (const [x1,y1,x2,y2] of lines) {
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${t + 2}" stroke-linecap="square" opacity="${s.opacity/100}" />`;
+      }
+      // Inner hollow stripe
+      for (const [x1,y1,x2,y2] of lines) {
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${outline === 'none' ? '#000' : outline}" stroke-width="${Math.max(0.5, t - 0.5)}" stroke-linecap="square" opacity="${s.opacity/100}" />`;
+      }
+      break;
+    }
+    case 'plus_dot': {
+      // Classic + with strong center dot (variant)
+      const lines = [
+        [0, -gap, 0, -half], [0, gap, 0, half],
+        [-gap, 0, -half, 0], [gap, 0, half, 0]
+      ];
+      if (s.outline) for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${outline}" stroke-width="${t + ow*2}" stroke-linecap="square" />`;
+      for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${t}" stroke-linecap="square" opacity="${s.opacity/100}" />`;
+      // Always draw a dot
+      const dr = Math.max(1.5, t);
+      inner += `<circle cx="0" cy="0" r="${dr}" fill="${color}" opacity="${s.opacity/100}" />`;
+      break;
+    }
     default: break;
   }
 
@@ -192,102 +369,10 @@ function render(s) {
   `;
 }
 
-let debugGridOn = false;
-let calibrationOn = false;
-
-function renderWithExtras(s) {
-  render(s);
-  if (debugGridOn) drawDebugGrid();
-  if (calibrationOn) drawCalibrationCursor();
-}
-
-function drawDebugGrid() {
-  const w = window.innerWidth, h = window.innerHeight;
-  const cx = w / 2, cy = h / 2;
-  const grid = document.createElement('div');
-  grid.id = 'debug-grid';
-  grid.innerHTML = `
-    <svg width="${w}" height="${h}" style="position:fixed;inset:0;pointer-events:none;">
-      <line x1="${cx}" y1="0" x2="${cx}" y2="${h}" stroke="#00ff00" stroke-width="1" stroke-dasharray="4,4" opacity="0.4"/>
-      <line x1="0" y1="${cy}" x2="${w}" y2="${cy}" stroke="#00ff00" stroke-width="1" stroke-dasharray="4,4" opacity="0.4"/>
-      <circle cx="${cx}" cy="${cy}" r="50" fill="none" stroke="#00ff00" stroke-width="1" opacity="0.3"/>
-      <circle cx="${cx}" cy="${cy}" r="100" fill="none" stroke="#00ff00" stroke-width="1" opacity="0.2"/>
-      <text x="${cx + 10}" y="${cy - 10}" fill="#00ff00" font-family="monospace" font-size="11" opacity="0.7">SCREEN CENTER (${cx}, ${cy})</text>
-    </svg>
-  `;
-  document.body.appendChild(grid);
-}
-
-function drawCalibrationCursor() {
-  const banner = document.createElement('div');
-  banner.id = 'calib-banner';
-  banner.style.cssText = 'position:fixed;top:30px;left:50%;transform:translateX(-50%);background:#EA4D4D;color:white;padding:12px 24px;font-family:monospace;font-size:13px;letter-spacing:1px;text-transform:uppercase;border:2px solid white;z-index:99999;box-shadow:0 0 20px rgba(0,0,0,0.8);pointer-events:none;';
-  banner.textContent = 'CALIBRATION MODE - Click where you want crosshair (Esc to cancel)';
-  document.body.appendChild(banner);
-  document.body.style.cursor = 'crosshair';
-}
-
-function clearOverlayExtras() {
-  const grid = document.getElementById('debug-grid');
-  if (grid) grid.remove();
-  const banner = document.getElementById('calib-banner');
-  if (banner) banner.remove();
-  document.body.style.cursor = 'none';
-}
-
-window.crosshairAPI.onSettingsUpdate(s => {
-  currentSettings = s;
-  clearOverlayExtras();
-  renderWithExtras(s);
-});
-
-window.crosshairAPI.getSettings().then(s => {
-  currentSettings = s;
-  renderWithExtras(s);
-});
-
-window.crosshairAPI.onDebug(action => {
-  if (action === 'toggleGrid') {
-    debugGridOn = !debugGridOn;
-    clearOverlayExtras();
-    renderWithExtras(currentSettings);
-  }
-});
-
-window.crosshairAPI.onCalibrationStart(() => {
-  calibrationOn = true;
-  clearOverlayExtras();
-  renderWithExtras(currentSettings);
-});
-
-window.crosshairAPI.onCalibrationCancel(() => {
-  calibrationOn = false;
-  clearOverlayExtras();
-  renderWithExtras(currentSettings);
-});
-
-// Listen for click during calibration
-document.addEventListener('click', async (e) => {
-  if (calibrationOn) {
-    calibrationOn = false;
-    await window.crosshairAPI.setCalibration({ x: e.clientX, y: e.clientY });
-    clearOverlayExtras();
-  }
-});
-
-// Esc cancels calibration
-document.addEventListener('keydown', async (e) => {
-  if (calibrationOn && e.key === 'Escape') {
-    calibrationOn = false;
-    await window.crosshairAPI.cancelCalibration();
-    clearOverlayExtras();
-  }
-});
+window.crosshairAPI.onSettingsUpdate(render);
+window.crosshairAPI.getSettings().then(render);
 
 // Re-render on resize
 window.addEventListener('resize', () => {
-  if (currentSettings) {
-    clearOverlayExtras();
-    renderWithExtras(currentSettings);
-  }
+  if (currentSettings) render(currentSettings);
 });

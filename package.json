@@ -47,7 +47,9 @@
       "output": "dist",
       "buildResources": "assets"
     },
-"win": {
+ "win": {
+      "certificateFile": "C:/Users/fauzanx07/Desktop/crosshair-f-cert.pfx",
+      "certificatePassword": "test123",
       "target": [
         {
           "target": "nsis",
@@ -56,25 +58,10 @@
         {
           "target": "portable",
           "arch": ["x64"]
-        },
-        {
-          "target": "appx",
-          "arch": ["x64"]
         }
       ],
       "icon": "assets/icon.ico",
       "requestedExecutionLevel": "asInvoker"
-    },
-    "appx": {
-      "applicationId": "CrosshairF",
-      "identityName": "fauzanx07.CrosshairF",
-      "publisher": "CN=fauzanx07",
-      "publisherDisplayName": "fauzanx07",
-      "displayName": "Crosshair F",
-      "backgroundColor": "#0d1117",
-      "languages": ["en-US"],
-      "showNameOnTiles": true,
-      "addAutoLaunchExtension": false
     },
     "nsis": {
       "oneClick": false,

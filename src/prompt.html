@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Save Game Preset</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=JetBrains+Mono:wght@500&family=Outfit:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{
+    font-family:'Outfit',sans-serif;
+    background:#0d1117;
+    color:#d4dde6;
+    height:100vh;
+    padding:20px;
+    border:2px solid #EA4D4D;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    position:relative;
+    overflow:hidden;
+    user-select:none;
+  }
+  body::before,body::after{
+    content:'';
+    position:absolute;
+    width:16px;
+    height:16px;
+    border:2px solid #EA4D4D;
+  }
+  body::before{top:0;left:0;border-right:none;border-bottom:none}
+  body::after{bottom:0;right:0;border-left:none;border-top:none}
+  h1{
+    font-family:'Rajdhani',sans-serif;
+    color:#EA4D4D;
+    font-size:18px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    margin-bottom:4px;
+  }
+  .sub{
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    color:#7d8a99;
+    letter-spacing:1.5px;
+    margin-bottom:18px;
+  }
+  input{
+    width:100%;
+    background:#1c242e;
+    border:1px solid #1f2a36;
+    color:#fff;
+    padding:12px 14px;
+    font-family:'JetBrains Mono',monospace;
+    font-size:13px;
+    outline:none;
+    margin-bottom:14px;
+  }
+  input:focus{border-color:#EA4D4D}
+  .err{
+    color:#ff4757;
+    font-size:11px;
+    margin-bottom:10px;
+    font-family:'JetBrains Mono',monospace;
+    min-height:14px;
+  }
+  .btns{display:flex;gap:8px;justify-content:flex-end}
+  button{
+    background:transparent;
+    border:1px solid #EA4D4D;
+    color:#EA4D4D;
+    padding:8px 16px;
+    font-family:'Rajdhani',sans-serif;
+    font-weight:600;
+    font-size:12px;
+    letter-spacing:1.5px;
+    text-transform:uppercase;
+    cursor:pointer;
+  }
+  button:hover{background:#EA4D4D;color:#0d1117}
+  button.ghost{border-color:#5a6776;color:#7d8a99}
+  button.ghost:hover{background:#1c242e;color:#d4dde6}
+</style>
+</head>
+<body>
+  <h1>Save Game Preset</h1>
+  <div class="sub" id="sub">CURRENT OFFSET · X: 0 · Y: 0</div>
+  <input type="text" id="name" placeholder="e.g. My Fortnite, Roblox Custom, CS2 Crouch..." maxlength="30" autofocus />
+  <div class="err" id="err"></div>
+  <div class="btns">
+    <button class="ghost" id="cancel">Cancel</button>
+    <button id="save">Save</button>
+  </div>
+<script>
+  const api = window.crosshairAPI;
+  const input = document.getElementById('name');
+  const err = document.getElementById('err');
+  const sub = document.getElementById('sub');
+
+  api.promptInit(data => {
+    sub.textContent = `CURRENT OFFSET · X: ${data.offsetX} · Y: ${data.offsetY}`;
+  });
+
+  async function save() {
+    const name = input.value.trim();
+    if (!name) { err.textContent = 'Name required'; return; }
+    const r = await api.promptSubmit(name);
+    if (!r.ok) err.textContent = r.error;
+  }
+
+  document.getElementById('save').addEventListener('click', save);
+  document.getElementById('cancel').addEventListener('click', () => api.promptCancel());
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') save();
+    if (e.key === 'Escape') api.promptCancel();
+  });
+  input.focus();
+</script>
+</body>
+</html>

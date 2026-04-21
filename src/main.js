@@ -1,16 +1,13 @@
-const { app, BrowserWindow, screen, globalShortcut, Tray, Menu, ipcMain, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, screen, globalShortcut, Tray, Menu, ipcMain, nativeImage, shell, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
-// Single instance lock so user does not open the app twice
+// Single instance lock
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
   process.exit(0);
 }
-
-// Disable hardware accel toggle is exposed in settings later if needed
-// We keep it ON by default for smoother rendering
 
 let overlayWindow = null;
 let settingsWindow = null;
@@ -20,8 +17,8 @@ let crosshairVisible = true;
 
 // Default settings
 const defaultSettings = {
-  shape: 'cross',           // cross, dot, t, circle, hybrid, scope, sniper
-  customImage: null,         // base64 PNG/SVG
+  shape: 'cross',
+  customImage: null,
   size: 32,
   thickness: 2,
   gapSize: 4,
@@ -42,34 +39,47 @@ const defaultSettings = {
   hotkeyReset: 'CommandOrControl+Alt+R',
   startWithWindows: false,
   startMinimized: false,
-  hideOnCapture: false,        // hide from screen recorders
+  hideOnCapture: false,
   smartContrast: false,
   activeProfile: 'default',
-  profiles: {
-    default: null              // will be filled with current settings
-  }
+  profiles: { default: null }
 };
 
 let settings = { ...defaultSettings };
 
-// Load electron-store lazily so app starts even if module missing
+// Built-in community backend (anon key is public by design; RLS protects data)
+const DEFAULT_COMMUNITY_CONFIG = {
+  endpoint: 'https://vqyjfbbuapytcyialxsu.supabase.co',
+  apiKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZxeWpmYmJ1YXB5dGN5aWFseHN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3NTk0MDcsImV4cCI6MjA5MjMzNTQwN30.zOCRjrV80L9BZXi402eqr1IHiy2H6E3sp7CMh4TNBSA'
+};
+let communityConfig = { ...DEFAULT_COMMUNITY_CONFIG };
+
 async function loadStore() {
   try {
     const Store = (await import('electron-store')).default;
     store = new Store({ name: 'crosshair-f-config' });
     const saved = store.get('settings');
-    if (saved) {
-      settings = { ...defaultSettings, ...saved };
-    }
+    if (saved) settings = { ...defaultSettings, ...saved };
   } catch (e) {
-    console.error('Could not load electron-store, using defaults:', e.message);
+    console.error('electron-store load failed:', e.message);
   }
 }
 
-function saveSettings() {
+function loadCommunityConfig() {
   if (store) {
-    store.set('settings', settings);
+    const saved = store.get('community');
+    if (saved && saved.endpoint && saved.apiKey) {
+      communityConfig = { ...DEFAULT_COMMUNITY_CONFIG, ...saved };
+    }
   }
+}
+
+function saveCommunityConfig() {
+  if (store) store.set('community', communityConfig);
+}
+
+function saveSettings() {
+  if (store) store.set('settings', settings);
 }
 
 function getMonitorBounds(index) {
@@ -78,54 +88,36 @@ function getMonitorBounds(index) {
   return displays[idx].bounds;
 }
 
+function broadcastSettings() {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.webContents.send('settings:update', settings);
+  }
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.webContents.send('settings:update', settings);
+  }
+}
+
 function createOverlay() {
   const bounds = getMonitorBounds(settings.monitorIndex);
-
   overlayWindow = new BrowserWindow({
-    x: bounds.x,
-    y: bounds.y,
-    width: bounds.width,
-    height: bounds.height,
-    transparent: true,
-    frame: false,
-    resizable: false,
-    movable: false,
-    minimizable: false,
-    maximizable: false,
-    closable: false,
-    fullscreenable: false,
-    skipTaskbar: true,
-    focusable: false,
-    alwaysOnTop: true,
-    hasShadow: false,
+    x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height,
+    transparent: true, frame: false, resizable: false, movable: false,
+    minimizable: false, maximizable: false, closable: false, fullscreenable: false,
+    skipTaskbar: true, focusable: false, alwaysOnTop: true, hasShadow: false,
     show: !settings.startMinimized,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      backgroundThrottling: false
+      contextIsolation: true, nodeIntegration: false, backgroundThrottling: false
     }
   });
-
-  // Click-through so it does not block your aim or clicks
   overlayWindow.setIgnoreMouseEvents(true, { forward: false });
-
-  // Stay above fullscreen apps as much as the OS allows
   overlayWindow.setAlwaysOnTop(true, 'screen-saver');
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-
-  // Hide from screen capture (OBS, recorders) if user wants
-  if (settings.hideOnCapture) {
-    overlayWindow.setContentProtection(true);
-  }
-
+  if (settings.hideOnCapture) overlayWindow.setContentProtection(true);
   overlayWindow.loadFile(path.join(__dirname, 'overlay.html'));
-
   overlayWindow.webContents.on('did-finish-load', () => {
     overlayWindow.webContents.send('settings:update', settings);
   });
-
-  // If user changes display config, reposition
   screen.on('display-metrics-changed', repositionOverlay);
   screen.on('display-added', repositionOverlay);
   screen.on('display-removed', repositionOverlay);
@@ -144,26 +136,18 @@ function createSettings() {
     settingsWindow.focus();
     return;
   }
-
   settingsWindow = new BrowserWindow({
-    width: 1100,
-    height: 720,
-    minWidth: 900,
-    minHeight: 620,
-    title: 'Crosshair F',
-    backgroundColor: '#0a0e14',
+    width: 1200, height: 780, minWidth: 900, minHeight: 620,
+    title: 'Crosshair F', backgroundColor: '#0a0e14',
     autoHideMenuBar: true,
     icon: path.join(__dirname, '..', 'assets', 'icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false
+      contextIsolation: true, nodeIntegration: false
     }
   });
-
   settingsWindow.setMenuBarVisibility(false);
   settingsWindow.loadFile(path.join(__dirname, 'settings.html'));
-
   settingsWindow.webContents.on('did-finish-load', () => {
     const displays = screen.getAllDisplays().map((d, i) => ({
       index: i,
@@ -172,8 +156,6 @@ function createSettings() {
     }));
     settingsWindow.webContents.send('init', { settings, displays });
   });
-
-  // Open external links in default browser
   settingsWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
@@ -181,38 +163,28 @@ function createSettings() {
 }
 
 function setupTray() {
-  // Try to load tray icon, fallback to empty if not present
   let trayIconPath = path.join(__dirname, '..', 'assets', 'icon.png');
   if (!fs.existsSync(trayIconPath)) {
     trayIconPath = path.join(__dirname, '..', 'assets', 'icon.ico');
   }
-
   let trayImage;
   try {
     trayImage = nativeImage.createFromPath(trayIconPath);
-    if (trayImage.isEmpty()) {
-      trayImage = nativeImage.createEmpty();
-    } else {
-      trayImage = trayImage.resize({ width: 16, height: 16 });
-    }
+    if (trayImage.isEmpty()) trayImage = nativeImage.createEmpty();
+    else trayImage = trayImage.resize({ width: 16, height: 16 });
   } catch (e) {
     trayImage = nativeImage.createEmpty();
   }
-
   tray = new Tray(trayImage);
   tray.setToolTip('Crosshair F');
   rebuildTrayMenu();
-
   tray.on('double-click', () => createSettings());
 }
 
 function rebuildTrayMenu() {
   if (!tray) return;
   const menu = Menu.buildFromTemplate([
-    {
-      label: crosshairVisible ? 'Hide Crosshair' : 'Show Crosshair',
-      click: () => toggleCrosshair()
-    },
+    { label: crosshairVisible ? 'Hide Crosshair' : 'Show Crosshair', click: () => toggleCrosshair() },
     { type: 'separator' },
     { label: 'Settings', click: () => createSettings() },
     { type: 'separator' },
@@ -233,11 +205,8 @@ function rebuildTrayMenu() {
 function toggleCrosshair() {
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
   crosshairVisible = !crosshairVisible;
-  if (crosshairVisible) {
-    overlayWindow.show();
-  } else {
-    overlayWindow.hide();
-  }
+  if (crosshairVisible) overlayWindow.show();
+  else overlayWindow.hide();
   rebuildTrayMenu();
 }
 
@@ -252,12 +221,7 @@ function resetPosition() {
   settings.offsetX = 0;
   settings.offsetY = 0;
   saveSettings();
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
-    overlayWindow.webContents.send('settings:update', settings);
-  }
-  if (settingsWindow && !settingsWindow.isDestroyed()) {
-    settingsWindow.webContents.send('settings:update', settings);
-  }
+  broadcastSettings();
 }
 
 function loadProfile(name) {
@@ -265,12 +229,7 @@ function loadProfile(name) {
   if (!p) return;
   settings = { ...settings, ...p, activeProfile: name, profiles: settings.profiles };
   saveSettings();
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
-    overlayWindow.webContents.send('settings:update', settings);
-  }
-  if (settingsWindow && !settingsWindow.isDestroyed()) {
-    settingsWindow.webContents.send('settings:update', settings);
-  }
+  broadcastSettings();
   rebuildTrayMenu();
 }
 
@@ -278,12 +237,7 @@ function nudgePosition(dx, dy) {
   settings.offsetX = (settings.offsetX || 0) + dx;
   settings.offsetY = (settings.offsetY || 0) + dy;
   saveSettings();
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
-    overlayWindow.webContents.send('settings:update', settings);
-  }
-  if (settingsWindow && !settingsWindow.isDestroyed()) {
-    settingsWindow.webContents.send('settings:update', settings);
-  }
+  broadcastSettings();
 }
 
 function toggleDebugGrid() {
@@ -293,32 +247,145 @@ function toggleDebugGrid() {
 
 function registerHotkeys() {
   globalShortcut.unregisterAll();
-
   const safeReg = (accel, fn, label) => {
     if (!accel) return;
     try { globalShortcut.register(accel, fn); }
     catch (e) { console.error(`Hotkey ${label} failed:`, e.message); }
   };
-
   safeReg(settings.hotkeyToggle, () => toggleCrosshair(), 'toggle');
   safeReg(settings.hotkeyHide, () => hideCrosshair(), 'hide');
   safeReg(settings.hotkeyReset, () => resetPosition(), 'reset');
-
-  // Nudge - 1px per press
   safeReg('Alt+Shift+Up', () => nudgePosition(0, -1), 'nudgeUp');
   safeReg('Alt+Shift+Down', () => nudgePosition(0, 1), 'nudgeDown');
   safeReg('Alt+Shift+Left', () => nudgePosition(-1, 0), 'nudgeLeft');
   safeReg('Alt+Shift+Right', () => nudgePosition(1, 0), 'nudgeRight');
-
-  // Big nudge - 10px per press
   safeReg('Ctrl+Alt+Shift+Up', () => nudgePosition(0, -10), 'bigNudgeUp');
   safeReg('Ctrl+Alt+Shift+Down', () => nudgePosition(0, 10), 'bigNudgeDown');
   safeReg('Ctrl+Alt+Shift+Left', () => nudgePosition(-10, 0), 'bigNudgeLeft');
   safeReg('Ctrl+Alt+Shift+Right', () => nudgePosition(10, 0), 'bigNudgeRight');
-
-  // Debug grid toggle
   safeReg('Alt+Shift+G', () => toggleDebugGrid(), 'debugGrid');
+  safeReg('Alt+Shift+S', () => saveCurrentAsCustomGamePreset(), 'savePreset');
 }
+
+// ========== CUSTOM GAME PRESETS (user-made) ==========
+function getCustomGamePresets() {
+  return store ? (store.get('customGamePresets') || []) : [];
+}
+
+function setCustomGamePresets(list) {
+  if (store) store.set('customGamePresets', list);
+}
+
+let promptWindow = null;
+
+function saveCurrentAsCustomGamePreset() {
+  // Require at least some offset so user doesn't save empty defaults
+  if (settings.offsetX === 0 && settings.offsetY === 0) {
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.webContents.send('notify', 'Adjust position first with Alt+Shift+Arrows before saving.');
+      settingsWindow.show();
+    }
+    return;
+  }
+  openPromptWindow();
+}
+
+function openPromptWindow() {
+  if (promptWindow && !promptWindow.isDestroyed()) {
+    promptWindow.focus();
+    return;
+  }
+  const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
+  promptWindow = new BrowserWindow({
+    width: 420,
+    height: 200,
+    x: Math.floor(sw / 2 - 210),
+    y: Math.floor(sh / 2 - 100),
+    frame: false,
+    transparent: false,
+    backgroundColor: '#0d1117',
+    resizable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+  promptWindow.loadFile(path.join(__dirname, 'prompt.html'));
+  promptWindow.once('ready-to-show', () => {
+    promptWindow.show();
+    promptWindow.focus();
+    promptWindow.webContents.send('prompt:init', {
+      offsetX: settings.offsetX,
+      offsetY: settings.offsetY
+    });
+  });
+}
+
+ipcMain.handle('prompt:submit', (event, name) => {
+  const trimmed = (name || '').trim();
+  if (!trimmed) return { ok: false, error: 'Name required' };
+  if (trimmed.length < 2 || trimmed.length > 30) return { ok: false, error: 'Name 2-30 chars' };
+  if (!/^[a-zA-Z0-9 _\-.]+$/.test(trimmed)) return { ok: false, error: 'Invalid chars' };
+
+  const list = getCustomGamePresets();
+  if (list.length >= 30) return { ok: false, error: 'Max 30 custom game presets' };
+  if (list.find(x => x.name.toLowerCase() === trimmed.toLowerCase())) {
+    return { ok: false, error: 'Name already exists' };
+  }
+  const entry = {
+    id: 'ugp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+    name: trimmed,
+    offsetX: settings.offsetX,
+    offsetY: settings.offsetY,
+    created: new Date().toISOString()
+  };
+  list.push(entry);
+  setCustomGamePresets(list);
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.webContents.send('customGamePresets:updated', list);
+  }
+  if (promptWindow && !promptWindow.isDestroyed()) {
+    promptWindow.close();
+    promptWindow = null;
+  }
+  return { ok: true, entry, list };
+});
+
+ipcMain.handle('prompt:cancel', () => {
+  if (promptWindow && !promptWindow.isDestroyed()) {
+    promptWindow.close();
+    promptWindow = null;
+  }
+  return { ok: true };
+});
+
+ipcMain.handle('customGamePreset:list', () => getCustomGamePresets());
+
+ipcMain.handle('customGamePreset:apply', (event, id) => {
+  const list = getCustomGamePresets();
+  const preset = list.find(x => x.id === id);
+  if (!preset) return { ok: false, error: 'Not found' };
+  settings.offsetX = preset.offsetX;
+  settings.offsetY = preset.offsetY;
+  saveSettings();
+  broadcastSettings();
+  return { ok: true, settings };
+});
+
+ipcMain.handle('customGamePreset:delete', (event, id) => {
+  let list = getCustomGamePresets();
+  list = list.filter(x => x.id !== id);
+  setCustomGamePresets(list);
+  return { ok: true, list };
+});
+
+ipcMain.handle('customGamePreset:openSaveDialog', () => {
+  saveCurrentAsCustomGamePreset();
+  return { ok: true };
+});
 
 function quitApp() {
   app.isQuiting = true;
@@ -329,19 +396,15 @@ function quitApp() {
   app.quit();
 }
 
-// IPC handlers
+// IPC: basic settings
 ipcMain.handle('settings:get', () => settings);
-
 ipcMain.handle('settings:set', (event, partial) => {
   const oldMonitor = settings.monitorIndex;
   const oldHideCapture = settings.hideOnCapture;
   settings = { ...settings, ...partial };
   saveSettings();
-
   if (overlayWindow && !overlayWindow.isDestroyed()) {
-    if (partial.monitorIndex !== undefined && partial.monitorIndex !== oldMonitor) {
-      repositionOverlay();
-    }
+    if (partial.monitorIndex !== undefined && partial.monitorIndex !== oldMonitor) repositionOverlay();
     if (partial.hideOnCapture !== undefined && partial.hideOnCapture !== oldHideCapture) {
       overlayWindow.setContentProtection(!!partial.hideOnCapture);
     }
@@ -349,7 +412,6 @@ ipcMain.handle('settings:set', (event, partial) => {
   }
   return settings;
 });
-
 ipcMain.handle('settings:reset', () => {
   settings = { ...defaultSettings, profiles: settings.profiles };
   saveSettings();
@@ -358,19 +420,15 @@ ipcMain.handle('settings:reset', () => {
   }
   return settings;
 });
-
 ipcMain.handle('hotkey:rebind', (event, partial) => {
   settings = { ...settings, ...partial };
   saveSettings();
   registerHotkeys();
   return settings;
 });
+ipcMain.handle('overlay:toggle', () => { toggleCrosshair(); return crosshairVisible; });
 
-ipcMain.handle('overlay:toggle', () => {
-  toggleCrosshair();
-  return crosshairVisible;
-});
-
+// IPC: profiles
 ipcMain.handle('profile:save', (event, name) => {
   const profile = { ...settings };
   delete profile.profiles;
@@ -382,12 +440,7 @@ ipcMain.handle('profile:save', (event, name) => {
   rebuildTrayMenu();
   return settings;
 });
-
-ipcMain.handle('profile:load', (event, name) => {
-  loadProfile(name);
-  return settings;
-});
-
+ipcMain.handle('profile:load', (event, name) => { loadProfile(name); return settings; });
 ipcMain.handle('profile:delete', (event, name) => {
   if (name === 'default') return settings;
   if (settings.profiles && settings.profiles[name]) {
@@ -398,11 +451,11 @@ ipcMain.handle('profile:delete', (event, name) => {
   }
   return settings;
 });
-
 ipcMain.handle('profile:list', () => Object.keys(settings.profiles || {}));
 
-// Game-specific position presets (offset from screen center)
+// IPC: game presets
 const GAME_PRESETS = {
+  'reset': { offsetX: 0, offsetY: 0, note: 'Reset (no offset)' },
   'roblox': { offsetX: 0, offsetY: 34, note: 'Roblox windowed (top bar offset)' },
   'roblox-fullscreen': { offsetX: 0, offsetY: 18, note: 'Roblox fullscreen' },
   'fortnite': { offsetX: 0, offsetY: 0, note: 'Fortnite borderless' },
@@ -421,8 +474,7 @@ const GAME_PRESETS = {
   'r6siege': { offsetX: 0, offsetY: 0, note: 'Rainbow Six Siege' },
   'thefinals': { offsetX: 0, offsetY: 0, note: 'The Finals' },
   'deadlock': { offsetX: 0, offsetY: 0, note: 'Deadlock' },
-  'marvelrivals': { offsetX: 0, offsetY: 0, note: 'Marvel Rivals' },
-  'reset': { offsetX: 0, offsetY: 0, note: 'Reset (no offset)' }
+  'marvelrivals': { offsetX: 0, offsetY: 0, note: 'Marvel Rivals' }
 };
 
 ipcMain.handle('app:applyGamePreset', (event, gameKey) => {
@@ -431,9 +483,7 @@ ipcMain.handle('app:applyGamePreset', (event, gameKey) => {
   settings.offsetX = preset.offsetX;
   settings.offsetY = preset.offsetY;
   saveSettings();
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
-    overlayWindow.webContents.send('settings:update', settings);
-  }
+  broadcastSettings();
   return { ok: true, settings, note: preset.note };
 });
 
@@ -443,34 +493,26 @@ ipcMain.handle('app:listGamePresets', () => {
   }));
 });
 
-// Calibration mode - user clicks on screen to set crosshair position
+// IPC: calibration
 let calibrationMode = false;
 ipcMain.handle('app:startCalibration', () => {
   if (!overlayWindow || overlayWindow.isDestroyed()) return { ok: false };
   calibrationMode = true;
-  // Make overlay clickable for calibration
   overlayWindow.setIgnoreMouseEvents(false);
   overlayWindow.webContents.send('debug:startCalibration');
   return { ok: true };
 });
-
 ipcMain.handle('app:setCalibration', (event, { x, y }) => {
   if (!calibrationMode || !overlayWindow || overlayWindow.isDestroyed()) return { ok: false };
   const bounds = getMonitorBounds(settings.monitorIndex);
-  const cx = bounds.width / 2;
-  const cy = bounds.height / 2;
-  settings.offsetX = Math.round(x - cx);
-  settings.offsetY = Math.round(y - cy);
+  settings.offsetX = Math.round(x - bounds.width / 2);
+  settings.offsetY = Math.round(y - bounds.height / 2);
   saveSettings();
   calibrationMode = false;
   overlayWindow.setIgnoreMouseEvents(true);
-  overlayWindow.webContents.send('settings:update', settings);
-  if (settingsWindow && !settingsWindow.isDestroyed()) {
-    settingsWindow.webContents.send('settings:update', settings);
-  }
+  broadcastSettings();
   return { ok: true, settings };
 });
-
 ipcMain.handle('app:cancelCalibration', () => {
   calibrationMode = false;
   if (overlayWindow && !overlayWindow.isDestroyed()) {
@@ -479,55 +521,75 @@ ipcMain.handle('app:cancelCalibration', () => {
   }
   return { ok: true };
 });
-
-ipcMain.handle('app:toggleDebugGrid', () => {
-  toggleDebugGrid();
-  return { ok: true };
-});
-
+ipcMain.handle('app:toggleDebugGrid', () => { toggleDebugGrid(); return { ok: true }; });
 ipcMain.handle('app:quit', () => quitApp());
-
 ipcMain.handle('app:openExternal', (event, url) => shell.openExternal(url));
-
 ipcMain.handle('app:setAutoLaunch', (event, enabled) => {
-  app.setLoginItemSettings({
-    openAtLogin: enabled,
-    openAsHidden: settings.startMinimized
-  });
+  app.setLoginItemSettings({ openAtLogin: enabled, openAsHidden: settings.startMinimized });
   settings.startWithWindows = enabled;
   saveSettings();
   return enabled;
 });
 
-// ========== COMMUNITY ==========
-let communityConfig = {
-  endpoint: '',
-  apiKey: ''
-};
+// IPC: user custom crosshair library
+function getCustomList() { return store ? (store.get('customCrosshairs') || []) : []; }
+function setCustomList(list) { if (store) store.set('customCrosshairs', list); }
 
-// ========== COMMUNITY ==========
-// Built-in community backend. Anon key is safe to embed (Supabase RLS protects data).
-const DEFAULT_COMMUNITY_CONFIG = {
-  endpoint: 'https://vqyjfbbuapytcyialxsu.supabase.co',
-  apiKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZxeWpmYmJ1YXB5dGN5aWFseHN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3NTk0MDcsImV4cCI6MjA5MjMzNTQwN30.zOCRjrV80L9BZXi402eqr1IHiy2H6E3sp7CMh4TNBSA'
-};
-
-let communityConfig = { ...DEFAULT_COMMUNITY_CONFIG };
-
-function loadCommunityConfig() {
-  // Built-in by default. Future override possible via electron-store.
-  if (store) {
-    const saved = store.get('community');
-    if (saved && saved.endpoint && saved.apiKey) {
-      communityConfig = { ...DEFAULT_COMMUNITY_CONFIG, ...saved };
+function validateCustomPreset(preset) {
+  const allowedShapes = ['cross','dot','t','circle','hybrid','scope','sniper',
+                         'x','corners','brackets','chevron','diamond','triangle','star',
+                         'ksight','prong3','prong6','double_ring','hollow_cross','plus_dot'];
+  if (!preset || typeof preset !== 'object') return { ok: false, error: 'Invalid preset' };
+  if (!allowedShapes.includes(preset.shape)) return { ok: false, error: 'Unknown shape' };
+  const ranges = {
+    size: [4, 200], thickness: [0.5, 20], gapSize: [0, 60],
+    rotation: [0, 359], opacity: [10, 100],
+    outlineThickness: [0.5, 6], centerDotSize: [0.5, 20]
+  };
+  for (const [k, [min, max]] of Object.entries(ranges)) {
+    if (preset[k] !== undefined) {
+      const v = parseFloat(preset[k]);
+      if (isNaN(v) || v < min || v > max) return { ok: false, error: `${k} out of range` };
     }
   }
+  for (const k of ['color','outlineColor','centerDotColor']) {
+    if (preset[k] && !/^#[0-9A-Fa-f]{6}$/.test(preset[k])) {
+      return { ok: false, error: `Invalid color format: ${k}` };
+    }
+  }
+  return { ok: true };
 }
 
-function saveCommunityConfig() {
-  if (store) store.set('community', communityConfig);
-}
+ipcMain.handle('custom:list', () => getCustomList());
+ipcMain.handle('custom:save', (event, { name, preset }) => {
+  if (!name || typeof name !== 'string') return { ok: false, error: 'Name required' };
+  const trimmed = name.trim();
+  if (trimmed.length < 2 || trimmed.length > 30) return { ok: false, error: 'Name must be 2-30 chars' };
+  if (!/^[a-zA-Z0-9 _\-.]+$/.test(trimmed)) return { ok: false, error: 'Only letters, numbers, spaces, dash, underscore, dot allowed' };
+  const v = validateCustomPreset(preset);
+  if (!v.ok) return v;
+  const list = getCustomList();
+  if (list.length >= 50) return { ok: false, error: 'Max 50 custom crosshairs. Delete some first.' };
+  if (list.find(x => x.name.toLowerCase() === trimmed.toLowerCase())) {
+    return { ok: false, error: 'Name already exists. Pick a different name.' };
+  }
+  const newEntry = {
+    id: 'cust_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+    name: trimmed, preset, category: 'custom',
+    created: new Date().toISOString()
+  };
+  list.push(newEntry);
+  setCustomList(list);
+  return { ok: true, list, entry: newEntry };
+});
+ipcMain.handle('custom:delete', (event, id) => {
+  let list = getCustomList();
+  list = list.filter(x => x.id !== id);
+  setCustomList(list);
+  return { ok: true, list };
+});
 
+// IPC: community backend
 ipcMain.handle('community:getConfig', () => communityConfig);
 ipcMain.handle('community:config', (event, cfg) => {
   communityConfig = { ...communityConfig, ...cfg };
@@ -535,11 +597,11 @@ ipcMain.handle('community:config', (event, cfg) => {
   return communityConfig;
 });
 
-async function supabaseFetch(path, options = {}) {
+async function supabaseFetch(urlPath, options = {}) {
   if (!communityConfig.endpoint || !communityConfig.apiKey) {
     throw new Error('Community backend not configured');
   }
-  const url = communityConfig.endpoint.replace(/\/$/, '') + '/rest/v1' + path;
+  const url = communityConfig.endpoint.replace(/\/$/, '') + '/rest/v1' + urlPath;
   const headers = {
     'apikey': communityConfig.apiKey,
     'Authorization': 'Bearer ' + communityConfig.apiKey,
@@ -554,82 +616,18 @@ async function supabaseFetch(path, options = {}) {
   return res.json();
 }
 
-ipcMain.handle('community:list', async (event, params = {}) => {
-  const { search = '', game = '', sort = 'popular', page = 0, limit = 20 } = params;
-  let query = '/crosshairs?select=*&verified=eq.true';
-  if (game) query += `&game=eq.${encodeURIComponent(game)}`;
-  if (search) query += `&or=(name.ilike.*${encodeURIComponent(search)}*,author.ilike.*${encodeURIComponent(search)}*,tags.ilike.*${encodeURIComponent(search)}*)`;
-  if (sort === 'popular') query += '&order=downloads.desc';
-  else if (sort === 'recent') query += '&order=created_at.desc';
-  else if (sort === 'rating') query += '&order=rating.desc';
-  query += `&offset=${page * limit}&limit=${limit}`;
-
-  try {
-    const data = await supabaseFetch(query);
-    return { ok: true, items: data };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
-});
-
-ipcMain.handle('community:upload', async (event, data) => {
-  // Strict client-side validation before sending
-  if (!data.name || data.name.length < 2 || data.name.length > 40) {
-    return { ok: false, error: 'Name must be 2-40 characters' };
-  }
-  if (!data.author || data.author.length < 2 || data.author.length > 20) {
-    return { ok: false, error: 'Author tag must be 2-20 characters' };
-  }
-  if (!data.preset || typeof data.preset !== 'object') {
-    return { ok: false, error: 'Invalid preset' };
-  }
-  // Sanitize: never allow custom image upload via this path. Only safe shape data.
-  // For custom images, the server scans them separately.
-  const safePreset = sanitizePreset(data.preset);
-  if (!safePreset) {
-    return { ok: false, error: 'Preset failed validation' };
-  }
-
-  try {
-    const payload = {
-      name: data.name.trim(),
-      author: data.author.trim(),
-      game: data.game || 'any',
-      tags: (data.tags || '').slice(0, 60),
-      description: (data.description || '').slice(0, 120),
-      preset: safePreset,
-      verified: false, // server cron job verifies after scan
-      downloads: 0,
-      rating: 0,
-      created_at: new Date().toISOString()
-    };
-    await supabaseFetch('/crosshairs', {
-      method: 'POST',
-      headers: { 'Prefer': 'return=minimal' },
-      body: JSON.stringify(payload)
-    });
-    return { ok: true, message: 'Uploaded! Will appear publicly after auto-scan (usually under 1 minute).' };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
-});
-
-function sanitizePreset(preset) {
-  // Whitelist only known fields. Strip anything weird.
+function sanitizeCommunityPreset(preset) {
   const allowed = ['shape','size','thickness','gapSize','color','opacity','rotation',
                    'outline','outlineColor','outlineThickness','centerDot','centerDotSize','centerDotColor'];
-  const allowedShapes = ['cross','dot','t','circle','hybrid','scope','sniper'];
+  const allowedShapes = ['cross','dot','t','circle','hybrid','scope','sniper',
+                         'x','corners','brackets','chevron','diamond','triangle','star',
+                         'ksight','prong3','prong6','double_ring','hollow_cross','plus_dot'];
   const out = {};
-  for (const key of allowed) {
-    if (preset[key] !== undefined) out[key] = preset[key];
-  }
-  // Reject custom images from community uploads in client. Server still rescans.
+  for (const key of allowed) if (preset[key] !== undefined) out[key] = preset[key];
   if (out.shape && !allowedShapes.includes(out.shape)) return null;
-  // Color must match #RRGGBB
   for (const key of ['color','outlineColor','centerDotColor']) {
     if (out[key] && !/^#[0-9a-fA-F]{6}$/.test(out[key])) return null;
   }
-  // Numeric ranges
   const ranges = {
     size: [4, 200], thickness: [0.5, 20], gapSize: [0, 60],
     opacity: [10, 100], rotation: [0, 359],
@@ -645,27 +643,63 @@ function sanitizePreset(preset) {
   return out;
 }
 
+ipcMain.handle('community:list', async (event, params = {}) => {
+  const { search = '', game = '', sort = 'popular', page = 0, limit = 20 } = params;
+  let query = '/crosshairs?select=*&verified=eq.true';
+  if (game) query += `&game=eq.${encodeURIComponent(game)}`;
+  if (search) query += `&or=(name.ilike.*${encodeURIComponent(search)}*,author.ilike.*${encodeURIComponent(search)}*,tags.ilike.*${encodeURIComponent(search)}*)`;
+  if (sort === 'popular') query += '&order=downloads.desc';
+  else if (sort === 'recent') query += '&order=created_at.desc';
+  else if (sort === 'rating') query += '&order=rating.desc';
+  query += `&offset=${page * limit}&limit=${limit}`;
+  try {
+    const data = await supabaseFetch(query);
+    return { ok: true, items: data };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('community:upload', async (event, data) => {
+  if (!data.name || data.name.length < 2 || data.name.length > 40) return { ok: false, error: 'Name must be 2-40 characters' };
+  if (!data.author || data.author.length < 2 || data.author.length > 20) return { ok: false, error: 'Author tag must be 2-20 characters' };
+  if (!data.preset || typeof data.preset !== 'object') return { ok: false, error: 'Invalid preset' };
+  const safePreset = sanitizeCommunityPreset(data.preset);
+  if (!safePreset) return { ok: false, error: 'Preset failed validation' };
+  try {
+    await supabaseFetch('/crosshairs', {
+      method: 'POST',
+      headers: { 'Prefer': 'return=minimal' },
+      body: JSON.stringify({
+        name: data.name.trim(), author: data.author.trim(),
+        game: data.game || 'any',
+        tags: (data.tags || '').slice(0, 60),
+        description: (data.description || '').slice(0, 120),
+        preset: safePreset, verified: false,
+        downloads: 0, rating: 0,
+        created_at: new Date().toISOString()
+      })
+    });
+    return { ok: true, message: 'Uploaded! Will appear publicly after auto-scan (usually under 1 minute).' };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
 ipcMain.handle('community:download', async (event, id) => {
   try {
     const data = await supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}&select=*`);
     if (!data || !data.length) return { ok: false, error: 'Not found' };
     const item = data[0];
-    // Increment download counter (fire-and-forget)
     supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify({ downloads: (item.downloads || 0) + 1 })
     }).catch(() => {});
-    // Apply the preset to current settings
-    const safe = sanitizePreset(item.preset);
+    const safe = sanitizeCommunityPreset(item.preset);
     if (!safe) return { ok: false, error: 'Preset failed validation on download' };
     settings = { ...settings, ...safe };
     saveSettings();
-    if (overlayWindow && !overlayWindow.isDestroyed()) {
-      overlayWindow.webContents.send('settings:update', settings);
-    }
-    if (settingsWindow && !settingsWindow.isDestroyed()) {
-      settingsWindow.webContents.send('settings:update', settings);
-    }
+    broadcastSettings();
     return { ok: true, settings };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -688,51 +722,45 @@ ipcMain.handle('community:report', async (event, { id, reason }) => {
   }
 });
 
-const { dialog } = require('electron');
-
+// First-launch disclaimer
 async function showFirstLaunchDisclaimer() {
   if (!store || store.get('disclaimer_accepted')) return true;
-
   const result = await dialog.showMessageBox({
     type: 'warning',
     title: 'Crosshair F - Terms & Notice',
     message: 'READ BEFORE USING',
     detail: `Crosshair F is a transparent overlay for games. By using this app you agree to:
 
-⚠ GAMES TO AVOID (will cause issues):
+GAMES TO AVOID (will cause issues):
 - Valorant (Vanguard kernel anti-cheat blocks ALL overlays)
 - Faceit / ESEA tournament play (CS2)
 - PUBG ranked / esports mode
 - Fortnite Champion League / FNCS
 - Any tournament with prize money
 
-✓ TERMS OF USE:
+TERMS OF USE:
 - Use at your OWN risk
 - Developers are NOT liable for ANY account bans, suspensions, or warnings
 - You have read your game's overlay policy
 - You will exit Crosshair F before launching restricted games
-- You will not use the community to upload offensive, NSFW, or copyrighted content
+- You will not upload offensive, NSFW, or copyrighted content to Community
 - You are 13 or older
 
-✓ PRIVACY:
+PRIVACY:
 - No telemetry, no tracking, no data collection
 - Settings stored locally on your PC only
-- Community uploads contain only the data you explicitly provide
 
-✓ TRADEMARKS:
-- Crosshair F is not affiliated with any game publisher mentioned
+TRADEMARKS:
+- Crosshair F is not affiliated with any game publisher
 - All game names are trademarks of their respective owners
 
-© 2026 Crosshair F. MIT License. Full terms in app under "Help & Info".
+Copyright 2026 Crosshair F. MIT License. Full terms under Help & Info.
 
 Click "I Understand & Accept" to continue, or "Exit" to quit.`,
     buttons: ['I Understand & Accept', 'Exit App'],
-    defaultId: 0,
-    cancelId: 1,
-    noLink: true,
+    defaultId: 0, cancelId: 1, noLink: true,
     icon: path.join(__dirname, '..', 'assets', 'icon.png')
   });
-
   if (result.response === 1) {
     app.quit();
     return false;
@@ -743,25 +771,18 @@ Click "I Understand & Accept" to continue, or "Exit" to quit.`,
   return true;
 }
 
+// App lifecycle
 app.whenReady().then(async () => {
   await loadStore();
   const accepted = await showFirstLaunchDisclaimer();
   if (!accepted) return;
-
   loadCommunityConfig();
   createOverlay();
   setupTray();
   registerHotkeys();
-
-  // Open settings on first run if no profile saved yet
-  if (!store || !store.get('settings')) {
-    createSettings();
-  }
+  if (!store || !store.get('settings')) createSettings();
 });
 
 app.on('second-instance', () => createSettings());
-app.on('window-all-closed', (e) => {
-  // Keep the app running in tray
-  e.preventDefault();
-});
+app.on('window-all-closed', (e) => { e.preventDefault(); });
 app.on('will-quit', () => globalShortcut.unregisterAll());
