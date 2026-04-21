@@ -733,24 +733,27 @@ ipcMain.handle('community:download', async (event, id) => {
     if (!data || !data.length) return { ok: false, error: 'Not found' };
     const item = data[0];
 
-    // Local tracking: if this device has already applied this crosshair, DON'T increment
     const applied = getAppliedSet();
     const alreadyApplied = applied.includes(id);
 
     if (!alreadyApplied) {
-      // First-time apply from this device - increment downloads
-      await supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ downloads: (item.downloads || 0) + 1 })
-      }).catch((e) => { console.error('Increment failed:', e.message); });
-      applied.push(id);
-      setAppliedSet(applied);
+      // Call RPC function to increment downloads (bypasses RLS safely)
+      try {
+        await supabaseFetch('/rpc/increment_downloads', {
+          method: 'POST',
+          body: JSON.stringify({ crosshair_id_param: id })
+        });
+        applied.push(id);
+        setAppliedSet(applied);
+      } catch (err) {
+        console.error('Increment RPC failed:', err.message);
+        return { ok: false, error: 'Could not update count. Did you run the RPC SQL in Supabase? ' + err.message };
+      }
     }
 
     const safe = sanitizeCommunityPreset(item.preset);
     if (!safe) return { ok: false, error: 'Preset failed validation on download' };
 
-    // Backup current settings so unapply can restore them
     if (store) store.set('lastAppliedCommunityBackup', { ...settings });
     settings = { ...settings, ...safe, _appliedCommunityId: id };
     saveSettings();
@@ -766,10 +769,7 @@ ipcMain.handle('community:unapply', async (event, id) => {
     const applied = getAppliedSet();
     const idx = applied.indexOf(id);
 
-    // IDEMPOTENCY: only decrement if this device actually had it applied.
-    // This prevents count-going-negative after uninstall/reinstall or stale data.
     if (idx === -1) {
-      // Not in applied list - don't touch the count, just restore backup if any
       const backup = store ? store.get('lastAppliedCommunityBackup') : null;
       if (backup) {
         settings = { ...backup };
@@ -780,22 +780,19 @@ ipcMain.handle('community:unapply', async (event, id) => {
       return { ok: true, settings, wasApplied: false };
     }
 
-    // Fetch current count, decrement by 1 (but never below 0)
-    const data = await supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}&select=*`);
-    if (data && data.length) {
-      const current = data[0].downloads || 0;
-      const newCount = Math.max(0, current - 1);
-      await supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ downloads: newCount })
-      }).catch((e) => { console.error('Decrement failed:', e.message); });
+    // Call RPC to decrement downloads (bypasses RLS)
+    try {
+      await supabaseFetch('/rpc/decrement_downloads', {
+        method: 'POST',
+        body: JSON.stringify({ crosshair_id_param: id })
+      });
+    } catch (err) {
+      console.error('Decrement RPC failed:', err.message);
     }
 
-    // Remove from local applied set
     applied.splice(idx, 1);
     setAppliedSet(applied);
 
-    // Restore previous settings
     const backup = store ? store.get('lastAppliedCommunityBackup') : null;
     if (backup) {
       settings = { ...backup };
