@@ -851,7 +851,7 @@ async function renderCommunityGrid() {
       </div>
       <div class="community-card-actions">
         ${isInstalled
-          ? `<button class="btn ghost" disabled>✓ Installed</button>`
+          ? `<button class="btn ghost" data-act="reapply">✓ Apply</button>`
           : `<button class="btn" data-act="install">Install</button>`}
         <button class="btn ghost details" data-act="details">Details</button>
       </div>
@@ -880,7 +880,7 @@ async function renderCommunityGrid() {
         alert(r.ok ? 'Reported. Thanks for helping keep the community safe.' : 'Report failed: ' + r.error);
       }
     });
-    // Install button
+    // Install button (fresh install)
     const installBtn = card.querySelector('[data-act="install"]');
     if (installBtn) {
       installBtn.addEventListener('click', async () => {
@@ -896,6 +896,25 @@ async function renderCommunityGrid() {
           alert('Install failed: ' + r.error);
           installBtn.disabled = false;
           installBtn.textContent = 'Install';
+        }
+      });
+    }
+
+    // Re-apply button (already installed, user changed preset and wants to come back)
+    const reapplyBtn = card.querySelector('[data-act="reapply"]');
+    if (reapplyBtn) {
+      reapplyBtn.addEventListener('click', async () => {
+        reapplyBtn.disabled = true;
+        reapplyBtn.textContent = 'Applying...';
+        const r = await api.communityInstall(item.id);
+        if (r.ok) {
+          applyToUI(r.settings);
+          reapplyBtn.disabled = false;
+          reapplyBtn.textContent = '✓ Apply';
+        } else {
+          alert('Could not apply: ' + r.error);
+          reapplyBtn.disabled = false;
+          reapplyBtn.textContent = '✓ Apply';
         }
       });
     }
@@ -1076,24 +1095,26 @@ async function openDetailsModal(crosshair) {
     }
   }
 
-  // Install button
+  // Install / Apply button
   const installBtn = document.getElementById('details-install');
   const isInstalled = installedIds.includes(crosshair.id);
-  installBtn.textContent = isInstalled ? '✓ Installed' : 'Install';
-  installBtn.disabled = isInstalled;
+  installBtn.textContent = isInstalled ? '✓ Apply' : 'Install';
+  installBtn.disabled = false;
   installBtn.onclick = async () => {
+    const originalText = installBtn.textContent;
     installBtn.disabled = true;
-    installBtn.textContent = 'Installing...';
+    installBtn.textContent = isInstalled ? 'Applying...' : 'Installing...';
     const r = await api.communityInstall(crosshair.id);
     if (r.ok) {
       applyToUI(r.settings);
-      installBtn.textContent = '✓ Installed';
+      installBtn.textContent = '✓ Apply';
+      installBtn.disabled = false;
       refreshInstalledGallery();
       refreshCommunity();
     } else {
-      alert('Install failed: ' + r.error);
+      alert((isInstalled ? 'Apply' : 'Install') + ' failed: ' + r.error);
       installBtn.disabled = false;
-      installBtn.textContent = 'Install';
+      installBtn.textContent = originalText;
     }
   };
 

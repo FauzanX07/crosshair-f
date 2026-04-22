@@ -245,9 +245,29 @@ function resetPosition() {
 }
 
 function loadProfile(name) {
+  if (name === 'default') {
+    // "Default" means reset to factory defaults
+    const preserved = {
+      profiles: settings.profiles,
+      monitorIndex: settings.monitorIndex,
+      hotkeyToggle: settings.hotkeyToggle,
+      hotkeyHide: settings.hotkeyHide,
+      hotkeyReset: settings.hotkeyReset,
+      startWithWindows: settings.startWithWindows,
+      startMinimized: settings.startMinimized,
+      hideOnCapture: settings.hideOnCapture
+    };
+    settings = { ...defaultSettings, ...preserved, activeProfile: 'default' };
+    saveSettings();
+    broadcastSettings();
+    rebuildTrayMenu();
+    return;
+  }
   const p = (settings.profiles || {})[name];
   if (!p) return;
+  // Loading a profile clears community marker (user abandoning community preset)
   settings = { ...settings, ...p, activeProfile: name, profiles: settings.profiles };
+  delete settings._appliedCommunityId;
   saveSettings();
   broadcastSettings();
   rebuildTrayMenu();
@@ -422,6 +442,18 @@ ipcMain.handle('settings:get', () => settings);
 ipcMain.handle('settings:set', (event, partial) => {
   const oldMonitor = settings.monitorIndex;
   const oldHideCapture = settings.hideOnCapture;
+
+  // If user is changing visual crosshair fields while a community crosshair is applied,
+  // clear the applied-community marker because they're moving away from that preset
+  const visualFields = ['shape', 'size', 'thickness', 'gapSize', 'color', 'opacity',
+                        'rotation', 'outline', 'outlineColor', 'outlineThickness',
+                        'centerDot', 'centerDotSize', 'centerDotColor', 'customImage',
+                        'armTop', 'armBottom', 'armLeft', 'armRight'];
+  const touchesVisual = Object.keys(partial).some(k => visualFields.includes(k));
+  if (touchesVisual && settings._appliedCommunityId) {
+    delete settings._appliedCommunityId;
+  }
+
   settings = { ...settings, ...partial };
   saveSettings();
   if (overlayWindow && !overlayWindow.isDestroyed()) {
@@ -435,6 +467,7 @@ ipcMain.handle('settings:set', (event, partial) => {
 });
 ipcMain.handle('settings:reset', () => {
   settings = { ...defaultSettings, profiles: settings.profiles };
+  // _appliedCommunityId not in defaultSettings so it's cleared automatically
   saveSettings();
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.webContents.send('settings:update', settings);
@@ -824,8 +857,15 @@ ipcMain.handle('community:install', async (event, id) => {
 
     const installed = getInstalledCrosshairs();
     const alreadyInstalled = installed.find(x => x.id === id);
+
+    // If already in library, just re-apply it (no double-count, no duplicate entry)
     if (alreadyInstalled) {
-      return { ok: false, error: 'Already installed. Check your Crosshairs tab.', alreadyInstalled: true };
+      const safe = sanitizeCommunityPreset(alreadyInstalled.preset);
+      if (!safe) return { ok: false, error: 'Preset failed validation' };
+      settings = { ...settings, ...safe, _appliedCommunityId: id };
+      saveSettings();
+      broadcastSettings();
+      return { ok: true, settings, entry: alreadyInstalled, reapplied: true };
     }
 
     // Increment download count via RPC
@@ -855,8 +895,7 @@ ipcMain.handle('community:install', async (event, id) => {
     installed.push(entry);
     setInstalledCrosshairs(installed);
 
-    // Also apply it immediately
-    if (store) store.set('lastAppliedCommunityBackup', { ...settings });
+    // Apply the community crosshair. No backup needed - uninstall resets to factory default.
     settings = { ...settings, ...safe, _appliedCommunityId: id };
     saveSettings();
     broadcastSettings();
@@ -879,7 +918,9 @@ ipcMain.handle('community:uninstall', async (event, id) => {
     const entry = installed.find(x => x.id === id);
     if (!entry) return { ok: false, error: 'Not in your installed library' };
 
-    // Decrement download count via RPC
+    const wasApplied = settings._appliedCommunityId === id;
+
+    // Decrement download count via RPC (even if not currently applied - install count was ours)
     try {
       await supabaseFetch('/rpc/decrement_downloads', {
         method: 'POST',
@@ -887,27 +928,47 @@ ipcMain.handle('community:uninstall', async (event, id) => {
       });
     } catch (err) {
       console.error('Decrement RPC failed:', err.message);
+      // Don't bail - still remove locally even if server call failed
     }
 
+    // Remove from local installed library
     installed = installed.filter(x => x.id !== id);
     setInstalledCrosshairs(installed);
 
-    // Remove from applied set too
+    // Remove from applied set (legacy tracking)
     let applied = getAppliedSet();
     applied = applied.filter(x => x !== id);
     setAppliedSet(applied);
 
-    // If this was the currently-applied community crosshair, restore backup
-    if (settings._appliedCommunityId === id) {
-      const backup = store ? store.get('lastAppliedCommunityBackup') : null;
-      if (backup) {
-        settings = { ...backup };
-        delete settings._appliedCommunityId;
-        saveSettings();
-        broadcastSettings();
-      }
+    // If this was the currently-applied community crosshair, reset to factory default
+    if (wasApplied) {
+      const factoryReset = {
+        shape: 'cross',
+        customImage: null,
+        size: 32,
+        thickness: 2,
+        gapSize: 4,
+        color: '#00FF00',
+        opacity: 100,
+        rotation: 0,
+        outline: true,
+        outlineColor: '#000000',
+        outlineThickness: 1,
+        centerDot: true,
+        centerDotSize: 2,
+        centerDotColor: '#FF0000',
+        armTop: 100,
+        armBottom: 100,
+        armLeft: 100,
+        armRight: 100
+      };
+      settings = { ...settings, ...factoryReset };
+      delete settings._appliedCommunityId;
+      saveSettings();
+      broadcastSettings();
     }
-    return { ok: true, installed };
+
+    return { ok: true, installed, wasApplied };
   } catch (e) {
     return { ok: false, error: e.message };
   }
