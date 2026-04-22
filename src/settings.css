@@ -1416,18 +1416,20 @@ input[type="color"]::-webkit-color-swatch { border: none; }
   box-sizing: border-box;
   min-width: 0;
 }
-.community-card-actions .btn {
-  padding: 6px 4px !important;
-  font-size: 10px !important;
-  min-width: 0;
-  width: 100%;
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  box-sizing: border-box;
-  margin: 0;
-  display: block;
+.community-card-actions .btn,
+.community-card-actions button {
+  padding: 6px 2px !important;
+  font-size: 9px !important;
+  letter-spacing: 0.5px !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+  display: block !important;
 }
 
 /* ============ MODAL BASE ============ */

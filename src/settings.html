@@ -593,14 +593,48 @@
               </select>
               <select id="gp-filter-mode" class="select">
                 <option value="">All Display Modes</option>
-                <option value="borderless">Borderless Windowed</option>
-                <option value="fullscreen">Fullscreen (Exclusive)</option>
-                <option value="windowed">Windowed</option>
+                <option value="fullscreen_exclusive">Fullscreen (Exclusive)</option>
                 <option value="borderless_fullscreen">Borderless Fullscreen</option>
-                <option value="fullscreen_windowed">Fullscreen Windowed</option>
-                <option value="browser">Browser / Web (Roblox)</option>
-                <option value="client">Native Client (Roblox)</option>
+                <option value="windowed">Windowed</option>
+                <option value="maximized_windowed">Maximized Windowed</option>
+                <option value="fullscreen_optimized">Fullscreen (Optimized)</option>
                 <option value="any">Any / Not Applicable</option>
+              </select>
+              <select id="gp-filter-res" class="select">
+                <option value="">All Resolutions</option>
+                <optgroup label="━ Most Common (16:9) ━">
+                  <option value="1920x1080">1920 × 1080 (1080p)</option>
+                  <option value="2560x1440">2560 × 1440 (1440p)</option>
+                  <option value="3840x2160">3840 × 2160 (4K)</option>
+                  <option value="1366x768">1366 × 768</option>
+                  <option value="1600x900">1600 × 900</option>
+                  <option value="1280x720">1280 × 720</option>
+                </optgroup>
+                <optgroup label="━ 16:10 ━">
+                  <option value="1920x1200">1920 × 1200</option>
+                  <option value="2560x1600">2560 × 1600</option>
+                  <option value="3840x2400">3840 × 2400</option>
+                </optgroup>
+                <optgroup label="━ Ultrawide 21:9 ━">
+                  <option value="2560x1080">2560 × 1080</option>
+                  <option value="3440x1440">3440 × 1440</option>
+                  <option value="3840x1600">3840 × 1600</option>
+                  <option value="5120x2160">5120 × 2160</option>
+                </optgroup>
+                <optgroup label="━ Super Ultrawide 32:9 ━">
+                  <option value="3840x1080">3840 × 1080</option>
+                  <option value="5120x1440">5120 × 1440</option>
+                  <option value="7680x2160">7680 × 2160</option>
+                </optgroup>
+                <optgroup label="━ 4:3 / Stretched ━">
+                  <option value="1024x768">1024 × 768</option>
+                  <option value="1280x960">1280 × 960</option>
+                  <option value="1280x1024">1280 × 1024</option>
+                  <option value="1440x1080">1440 × 1080</option>
+                  <option value="1600x1200">1600 × 1200</option>
+                  <option value="1728x1080">1728 × 1080</option>
+                  <option value="1920x1440">1920 × 1440</option>
+                </optgroup>
               </select>
               <button class="btn ghost" id="btn-gp-refresh">Refresh</button>
             </div>
@@ -656,20 +690,60 @@
               <div class="row">
                 <label>Display Mode (how your game was running)</label>
                 <select id="gp-upload-mode" class="select">
-                  <option value="borderless">Borderless Windowed</option>
-                  <option value="fullscreen">Fullscreen (Exclusive)</option>
-                  <option value="windowed">Windowed</option>
-                  <option value="borderless_fullscreen">Borderless Fullscreen</option>
-                  <option value="fullscreen_windowed">Fullscreen Windowed</option>
-                  <option value="browser">Browser / Web (Roblox)</option>
-                  <option value="client">Native Client (Roblox)</option>
+                  <option value="fullscreen_exclusive">Fullscreen (Exclusive) — game owns display, lowest latency</option>
+                  <option value="borderless_fullscreen" selected>Borderless Fullscreen — fills screen, no border (most common)</option>
+                  <option value="windowed">Windowed — bordered resizable window</option>
+                  <option value="maximized_windowed">Maximized Windowed — windowed at max size</option>
+                  <option value="fullscreen_optimized">Fullscreen (Optimized) — Windows 10+ auto-converts FSE to borderless</option>
                   <option value="any">Any / Not Applicable</option>
                 </select>
               </div>
             </div>
             <div class="row">
-              <label>Resolution Override (optional, use if your game runs at different resolution than your desktop)</label>
-              <input type="text" id="gp-upload-res-override" placeholder="e.g. 1920x1080 (leave empty to use your screen resolution)" maxlength="12" />
+              <label>Resolution (defaults to your screen, but change if your game runs at a different resolution)</label>
+              <select id="gp-upload-res-select" class="select">
+                <option value="auto">Auto-detect my screen resolution</option>
+                <optgroup label="━ Most Common (16:9) ━">
+                  <option value="1920x1080">1920 × 1080 (1080p / FHD)</option>
+                  <option value="2560x1440">2560 × 1440 (1440p / QHD)</option>
+                  <option value="3840x2160">3840 × 2160 (4K / UHD)</option>
+                  <option value="1366x768">1366 × 768 (HD laptop)</option>
+                  <option value="1600x900">1600 × 900 (HD+)</option>
+                  <option value="1280x720">1280 × 720 (720p / HD)</option>
+                </optgroup>
+                <optgroup label="━ 16:10 ━">
+                  <option value="1920x1200">1920 × 1200 (WUXGA)</option>
+                  <option value="2560x1600">2560 × 1600 (WQXGA)</option>
+                  <option value="3840x2400">3840 × 2400 (WQUXGA)</option>
+                </optgroup>
+                <optgroup label="━ Ultrawide 21:9 ━">
+                  <option value="2560x1080">2560 × 1080 (UW-FHD)</option>
+                  <option value="3440x1440">3440 × 1440 (UW-QHD)</option>
+                  <option value="3840x1600">3840 × 1600 (UW-QHD+)</option>
+                  <option value="5120x2160">5120 × 2160 (UW-5K)</option>
+                </optgroup>
+                <optgroup label="━ Super Ultrawide 32:9 ━">
+                  <option value="3840x1080">3840 × 1080 (DFHD)</option>
+                  <option value="5120x1440">5120 × 1440 (DQHD / G9)</option>
+                  <option value="7680x2160">7680 × 2160 (D4K)</option>
+                </optgroup>
+                <optgroup label="━ 4:3 / Stretched (Esports) ━">
+                  <option value="1024x768">1024 × 768 (XGA)</option>
+                  <option value="1280x960">1280 × 960</option>
+                  <option value="1280x1024">1280 × 1024 (5:4 SXGA)</option>
+                  <option value="1440x1080">1440 × 1080 (stretched CS)</option>
+                  <option value="1600x1200">1600 × 1200 (UXGA)</option>
+                  <option value="1728x1080">1728 × 1080</option>
+                  <option value="1920x1440">1920 × 1440</option>
+                </optgroup>
+                <optgroup label="━ Other ━">
+                  <option value="custom">Other / Custom (type manually below)</option>
+                </optgroup>
+              </select>
+            </div>
+            <div class="row" id="gp-upload-custom-res-row" style="display:none">
+              <label>Custom Resolution</label>
+              <input type="text" id="gp-upload-res-custom" placeholder="e.g. 2880x1800" maxlength="12" />
             </div>
             <div class="row">
               <label>Description (optional, max 300 chars)</label>

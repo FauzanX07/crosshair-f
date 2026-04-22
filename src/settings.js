@@ -1253,7 +1253,10 @@ async function refreshGpGrid() {
     displayMode: gpState.mode || '',
     sort: 'popular'
   };
-  if (gpState.view === 'matching' && userResolution) {
+  // Resolution: explicit filter takes priority, else "matching your setup" auto-uses detected resolution
+  if (gpState.resolution) {
+    params.resolution = gpState.resolution;
+  } else if (gpState.view === 'matching' && userResolution) {
     params.resolution = userResolution;
   }
 
@@ -1289,13 +1292,11 @@ function renderGpGrid(installedIds) {
     const isMatching = item.resolution === userResolution;
 
     const modeLabel = {
-      borderless: 'Borderless',
-      fullscreen: 'Fullscreen',
-      windowed: 'Windowed',
+      fullscreen_exclusive: 'FS Exclusive',
       borderless_fullscreen: 'Borderless FS',
-      fullscreen_windowed: 'FS Windowed',
-      browser: 'Browser',
-      client: 'Native Client',
+      windowed: 'Windowed',
+      maximized_windowed: 'Max Windowed',
+      fullscreen_optimized: 'FS Optimized',
       any: 'Any Mode'
     }[item.display_mode] || item.display_mode;
 
@@ -1449,31 +1450,60 @@ document.querySelectorAll('[data-gp-view]').forEach(chip => {
 // Upload game preset
 const btnGpUpload = document.getElementById('btn-gp-upload');
 if (btnGpUpload) {
+  // Toggle custom resolution field when user picks "custom"
+  const resSelect = document.getElementById('gp-upload-res-select');
+  const customRow = document.getElementById('gp-upload-custom-res-row');
+  if (resSelect && customRow) {
+    resSelect.addEventListener('change', () => {
+      customRow.style.display = resSelect.value === 'custom' ? '' : 'none';
+      updateUploadResLabel();
+    });
+  }
+
+  function updateUploadResLabel() {
+    const el = document.getElementById('gp-upload-res');
+    if (!el) return;
+    const sel = document.getElementById('gp-upload-res-select').value;
+    if (sel === 'auto') el.textContent = userResolution || 'detecting...';
+    else if (sel === 'custom') {
+      const custom = document.getElementById('gp-upload-res-custom').value.trim();
+      el.textContent = custom || '(enter custom)';
+    } else el.textContent = sel;
+  }
+
+  const customInput = document.getElementById('gp-upload-res-custom');
+  if (customInput) customInput.addEventListener('input', updateUploadResLabel);
+
   btnGpUpload.addEventListener('click', async () => {
     const name = document.getElementById('gp-upload-name').value.trim();
     const author = document.getElementById('gp-upload-author').value.trim() || 'anonymous';
     const game = document.getElementById('gp-upload-game').value;
     const displayMode = document.getElementById('gp-upload-mode').value;
     const description = document.getElementById('gp-upload-desc').value.trim();
-    const resOverride = (document.getElementById('gp-upload-res-override').value || '').trim();
+
+    // Resolution logic
+    const resSel = document.getElementById('gp-upload-res-select').value;
+    let finalRes;
+    if (resSel === 'auto') {
+      finalRes = userResolution;
+    } else if (resSel === 'custom') {
+      finalRes = document.getElementById('gp-upload-res-custom').value.trim();
+      if (!/^\d{3,5}x\d{3,5}$/.test(finalRes)) {
+        return alert('Custom resolution must be format like 1920x1080 (digits x digits).');
+      }
+    } else {
+      finalRes = resSel;
+    }
 
     if (!name || name.length < 2) return alert('Please enter a preset name (min 2 chars).');
     if (!currentSettings) return alert('Settings not ready, try again in a sec.');
+    if (!finalRes) return alert('Could not determine resolution. Pick one from the dropdown.');
+
     const offsetX = currentSettings.offsetX || 0;
     const offsetY = currentSettings.offsetY || 0;
     if (offsetX === 0 && offsetY === 0) {
       if (!confirm('Your current offset is 0,0 (default center). Are you sure you want to upload this?')) return;
     }
-
-    // Resolution: use override if provided and valid, else auto-detected
-    let finalRes = userResolution;
-    if (resOverride) {
-      if (!/^\d{3,5}x\d{3,5}$/.test(resOverride)) {
-        return alert('Resolution override must be format like 1920x1080 (digits x digits).');
-      }
-      finalRes = resOverride;
-    }
-    if (!finalRes) return alert('Could not detect your screen resolution. Either enter a manual override or restart the app.');
 
     btnGpUpload.disabled = true;
     btnGpUpload.textContent = 'Uploading...';
@@ -1488,11 +1518,23 @@ if (btnGpUpload) {
       alert(`Uploaded! Your preset "${name}" is now pending verification. Once approved (usually within a few minutes) it will appear in the browse list.`);
       document.getElementById('gp-upload-name').value = '';
       document.getElementById('gp-upload-desc').value = '';
-      document.getElementById('gp-upload-res-override').value = '';
+      if (customInput) customInput.value = '';
+      document.getElementById('gp-upload-res-select').value = 'auto';
+      if (customRow) customRow.style.display = 'none';
+      updateUploadResLabel();
       refreshGpGrid();
     } else {
       alert('Upload failed: ' + r.error);
     }
+  });
+}
+
+// Wire browse resolution filter
+const gpFilterRes = document.getElementById('gp-filter-res');
+if (gpFilterRes) {
+  gpFilterRes.addEventListener('change', e => {
+    gpState.resolution = e.target.value;
+    refreshGpGrid();
   });
 }
 
