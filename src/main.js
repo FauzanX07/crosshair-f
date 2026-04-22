@@ -1813,7 +1813,14 @@ Click "I Understand & Accept" to continue, or "Exit" to quit.`,
 
 // ========== CLEANUP MODE (called by uninstaller) ==========
 async function runCleanupMode() {
-  console.log('[Cleanup] Starting cleanup mode at', new Date().toISOString());
+  // Write cleanup logs to a file so we can debug AFTER uninstall
+const logPath = path.join(os.tmpdir(), 'crosshair-f-cleanup.log');
+const cleanupLog = (msg) => {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  try { fs.appendFileSync(logPath, line); } catch {}
+  console.log(msg);
+};
+cleanupLog('[Cleanup] Starting cleanup mode');
   try {
     const Store = (await import('electron-store')).default;
     const tempStore = new Store({ name: 'crosshair-f-config' });
@@ -1837,7 +1844,7 @@ async function runCleanupMode() {
       } catch { /* fall through to defaults */ }
     }
 
-    console.log(`[Cleanup] Decrementing ${installedCrosshairs.length} crosshair + ${installedGamePresets.length} game preset installs on ${endpoint}`);
+    cleanupLog(`[Cleanup] Decrementing ${installedCrosshairs.length} crosshair + ${installedGamePresets.length} game preset installs on ${endpoint}`);
 
     // Helper to call a decrement RPC with per-call timeout
     const decrementCall = (rpc, param, value) => {
@@ -1854,10 +1861,10 @@ async function runCleanupMode() {
         },
         body: JSON.stringify({ [param]: value })
       }).then(r => {
-        console.log(`[Cleanup] ${rpc}(${value}) → ${r.status}`);
+        cleanupLog(`[Cleanup] ${rpc}(${value}) → ${r.status}`);
         return r;
       }).catch(e => {
-        console.log(`[Cleanup] ${rpc}(${value}) → ERROR ${e.message}`);
+        cleanupLog(`[Cleanup] ${rpc}(${value}) → ERROR ${e.message}`);
         return null;
       }).finally(() => clearTimeout(timer));
     };
@@ -1894,9 +1901,9 @@ async function runCleanupMode() {
     tempStore.set('installedGamePresets', []);
     tempStore.set('appliedCommunityIds', []);
 
-    console.log('[Cleanup] Done at', new Date().toISOString());
+    cleanupLog('[Cleanup] Done');
   } catch (e) {
-    console.error('[Cleanup] Failed:', e && e.message ? e.message : String(e));
+    cleanupLog('[Cleanup] Failed: ' + (e && e.message ? e.message : String(e)));
   }
   // Force exit - uninstaller is waiting for this process to die.
   // app.quit() is async, process.exit is immediate.
