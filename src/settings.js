@@ -807,22 +807,29 @@ function handleWindowRefocus() {
   } catch (e) {}
 }
 
-// Capture-phase click handler on ALL inputs — if the first click lands on
-// an input but focus didn't transfer, force it to focus on the next tick.
-// This is bulletproof because it runs before any other handler.
-document.addEventListener('pointerdown', (e) => {
+// Capture-phase click handler on ALL inputs — defeats Chromium first-click-after-focus bug.
+// Runs BEFORE any other handler. Forces focus both synchronously and on next tick.
+function forceFocusIfInput(e) {
   const t = e.target;
   if (!t) return;
   const tag = t.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
     if (document.activeElement !== t) {
-      // Force focus on next tick so browser's native focus flow doesn't clobber it
+      // Try sync focus first
+      try { t.focus({ preventScroll: true }); } catch (err) {}
+      // Belt-and-suspenders: also schedule on next tick in case Chromium
+      // overwrites activeElement during the native click flow
       setTimeout(() => {
-        try { t.focus(); } catch (err) {}
+        try {
+          if (document.activeElement !== t) t.focus({ preventScroll: true });
+        } catch (err) {}
       }, 0);
     }
   }
-}, true);
+}
+document.addEventListener('pointerdown', forceFocusIfInput, true);
+document.addEventListener('mousedown', forceFocusIfInput, true);
+document.addEventListener('click', forceFocusIfInput, true);
 
 // Initial load fallback if onInit did not arrive yet
 api.getSettings().then(s => {
@@ -1796,6 +1803,11 @@ async function refreshInstalledGpGallery() {
         if (!confirm(`Delete "${item.name}" from your installed presets?\n\nThis will decrease its install count in the community.`)) return;
         const r = await api.communityGamePresetUninstall(item.id);
         if (r.ok) {
+          // If this was the currently-applied preset, main.js reverted offset to 0,0.
+          // Push that back into the UI (sliders, live preview, overlay signal).
+          if (r.reverted && r.settings) {
+            applyToUI(r.settings);
+          }
           refreshInstalledGpGallery();
           refreshGpGrid();
         } else {

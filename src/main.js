@@ -275,15 +275,20 @@ function createSettings() {
   // Fix first-click-after-focus bug: when window regains focus (alt-tab back,
   // taskbar click, tray restore), hover/click state in Chromium can go stale
   // until mouse moves. Force a renderer notification so JS can reflow listeners.
+  // Also call webContents.focus() which specifically re-primes the renderer's
+  // input routing layer (this is what was missing).
   settingsWindow.on('focus', () => {
     if (settingsWindow && !settingsWindow.isDestroyed()) {
       lowerOverlay();
+      // CRITICAL: focus the web contents, not just the window
+      try { settingsWindow.webContents.focus(); } catch (e) {}
       settingsWindow.webContents.send('window:focused');
     }
   });
   settingsWindow.on('show', () => {
     if (settingsWindow && !settingsWindow.isDestroyed()) {
       lowerOverlay();
+      try { settingsWindow.webContents.focus(); } catch (e) {}
       settingsWindow.webContents.send('window:focused');
     }
   });
@@ -291,6 +296,7 @@ function createSettings() {
     if (settingsWindow && !settingsWindow.isDestroyed()) {
       lowerOverlay();
       settingsWindow.focus();
+      try { settingsWindow.webContents.focus(); } catch (e) {}
       settingsWindow.webContents.send('window:focused');
     }
   });
@@ -1633,7 +1639,17 @@ ipcMain.handle('gamePreset:uninstall', async (event, id) => {
     installed = installed.filter(x => x.id !== id);
     setInstalledGamePresets(installed);
 
-    return { ok: true, installed };
+    // If the offset currently applied matches the one we just uninstalled,
+    // revert to default (0,0) so user isn't stuck with a ghost offset
+    const reverted = (settings.offsetX === entry.offset_x && settings.offsetY === entry.offset_y);
+    if (reverted) {
+      settings.offsetX = 0;
+      settings.offsetY = 0;
+      saveSettings();
+      broadcastSettings();
+    }
+
+    return { ok: true, installed, reverted, settings };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -1797,6 +1813,7 @@ Click "I Understand & Accept" to continue, or "Exit" to quit.`,
 
 // ========== CLEANUP MODE (called by uninstaller) ==========
 async function runCleanupMode() {
+  console.log('[Cleanup] Starting cleanup mode at', new Date().toISOString());
   try {
     const Store = (await import('electron-store')).default;
     const tempStore = new Store({ name: 'crosshair-f-config' });
@@ -1820,52 +1837,58 @@ async function runCleanupMode() {
       } catch { /* fall through to defaults */ }
     }
 
-    console.log(`[Cleanup] Decrementing ${installedCrosshairs.length} crosshair installs + ${installedGamePresets.length} game preset installs...`);
+    console.log(`[Cleanup] Decrementing ${installedCrosshairs.length} crosshair + ${installedGamePresets.length} game preset installs on ${endpoint}`);
 
-    // Helper to call a decrement RPC with timeout
+    // Helper to call a decrement RPC with per-call timeout
     const decrementCall = (rpc, param, value) => {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 3000);
+      const timer = setTimeout(() => controller.abort(), 5000);
       return fetch(`${endpoint}/rest/v1/rpc/${rpc}`, {
         method: 'POST',
         signal: controller.signal,
         headers: {
           'apikey': apiKey,
           'Authorization': 'Bearer ' + apiKey,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal'
         },
         body: JSON.stringify({ [param]: value })
-      }).catch(() => null).finally(() => clearTimeout(timer));
+      }).then(r => {
+        console.log(`[Cleanup] ${rpc}(${value}) → ${r.status}`);
+        return r;
+      }).catch(e => {
+        console.log(`[Cleanup] ${rpc}(${value}) → ERROR ${e.message}`);
+        return null;
+      }).finally(() => clearTimeout(timer));
     };
 
-    // Filter to only valid IDs - skip any tampered or corrupt entries
+    // Filter to only valid IDs
     const validId = (id) => typeof id === 'string' && /^[A-Za-z0-9_-]+$/.test(id) && id.length <= 100;
     const validCrosshairs = installedCrosshairs.filter(x => x && validId(x.id));
     const validGamePresets = installedGamePresets.filter(x => x && validId(x.id));
 
-    // Decrement crosshair installs
-    const crosshairPromises = validCrosshairs.map(item =>
-      decrementCall('decrement_downloads', 'crosshair_id_param', item.id)
-    );
-    // Decrement game preset installs
-    const gamePresetPromises = validGamePresets.map(item =>
-      decrementCall('decrement_game_preset_downloads', 'preset_id_param', item.id)
-    );
+    const allPromises = [
+      ...validCrosshairs.map(item => decrementCall('decrement_downloads', 'crosshair_id_param', item.id)),
+      ...validGamePresets.map(item => decrementCall('decrement_game_preset_downloads', 'preset_id_param', item.id))
+    ];
 
-    await Promise.all([...crosshairPromises, ...gamePresetPromises]);
+    // Overall budget: 30s max. Whichever finishes first, we exit.
+    const overallBudget = new Promise(resolve => setTimeout(resolve, 30000));
+    await Promise.race([Promise.all(allPromises), overallBudget]);
 
-    // Clear lists so reinstall starts fresh
+    // Clear lists so reinstall starts fresh (only if user is truly uninstalling
+    // - but this runs regardless because the next step is file deletion anyway)
     tempStore.set('installedCrosshairs', []);
     tempStore.set('installedGamePresets', []);
     tempStore.set('appliedCommunityIds', []);
 
-    console.log('[Cleanup] Done.');
+    console.log('[Cleanup] Done at', new Date().toISOString());
   } catch (e) {
-    console.error('[Cleanup] Failed:', e.message);
+    console.error('[Cleanup] Failed:', e && e.message ? e.message : String(e));
   }
-  // Fast exit - uninstaller is waiting for this process to die
-  setTimeout(() => process.exit(0), 100);
-  app.quit();
+  // Force exit - uninstaller is waiting for this process to die.
+  // app.quit() is async, process.exit is immediate.
+  setTimeout(() => process.exit(0), 200);
 }
 
 // ========== GLOBAL SESSION SECURITY HARDENING ==========
