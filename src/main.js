@@ -74,23 +74,62 @@ const DEFAULT_COMMUNITY_CONFIG = {
 };
 let communityConfig = { ...DEFAULT_COMMUNITY_CONFIG };
 
+// ============ SECURITY: IPC RATE LIMITER ============
+// Prevents runaway XSS / compromised renderer from hammering Supabase or the local store.
+// Uses a sliding window: max N calls per M ms per channel.
+const ipcRateLimits = new Map(); // channel -> { hits: [ts, ts, ...], max, windowMs }
+function ipcRateLimit(channel, max, windowMs) {
+  const now = Date.now();
+  let bucket = ipcRateLimits.get(channel);
+  if (!bucket) {
+    bucket = { hits: [], max, windowMs };
+    ipcRateLimits.set(channel, bucket);
+  }
+  // Drop hits outside the window
+  bucket.hits = bucket.hits.filter(t => now - t < windowMs);
+  if (bucket.hits.length >= max) return false;
+  bucket.hits.push(now);
+  return true;
+}
+
 async function loadStore() {
   try {
     const Store = (await import('electron-store')).default;
     store = new Store({ name: 'crosshair-f-config' });
     const saved = store.get('settings');
-    if (saved) settings = { ...defaultSettings, ...saved };
+    // Defense: only merge if saved is a plain object (not array, not null, not string)
+    if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+      settings = { ...defaultSettings, ...saved };
+      // Force-drop any keys that aren't in defaultSettings or aren't known-safe
+      // (e.g. a malicious actor writing directly to the config file)
+      const knownKeys = new Set(Object.keys(defaultSettings).concat([
+        '_appliedCommunityId', 'customImage', 'customImageSize'
+      ]));
+      for (const k of Object.keys(settings)) {
+        if (!knownKeys.has(k)) delete settings[k];
+      }
+    }
   } catch (e) {
-    console.error('electron-store load failed:', e.message);
+    console.error('[Store] load failed, starting with defaults:', e.message);
+    settings = { ...defaultSettings };
   }
 }
 
 function loadCommunityConfig() {
-  if (store) {
+  if (!store) return;
+  try {
     const saved = store.get('community');
-    if (saved && saved.endpoint && saved.apiKey) {
-      communityConfig = { ...DEFAULT_COMMUNITY_CONFIG, ...saved };
+    if (saved && typeof saved === 'object' && typeof saved.endpoint === 'string' && typeof saved.apiKey === 'string') {
+      // Validate the persisted endpoint - reject if someone tampered with the config file
+      let parsed;
+      try { parsed = new URL(saved.endpoint); } catch { return; }
+      if (parsed.protocol !== 'https:') return;
+      if (!/^[a-z0-9-]+\.supabase\.co$/i.test(parsed.hostname)) return;
+      if (!/^[A-Za-z0-9_\-.]+$/.test(saved.apiKey) || saved.apiKey.length < 20 || saved.apiKey.length > 1000) return;
+      communityConfig = { endpoint: saved.endpoint.replace(/\/$/, ''), apiKey: saved.apiKey };
     }
+  } catch (e) {
+    console.error('[Store] community config load failed:', e.message);
   }
 }
 
@@ -117,6 +156,44 @@ function broadcastSettings() {
   }
 }
 
+// Helper: validate that a URL is safe to open externally.
+// Only http(s) allowed - no file://, javascript:, data:, etc.
+function isSafeExternalUrl(rawUrl) {
+  if (typeof rawUrl !== 'string' || rawUrl.length > 2000) return false;
+  let parsed;
+  try { parsed = new URL(rawUrl); } catch { return false; }
+  return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+}
+
+function safeOpenExternal(url) {
+  if (!isSafeExternalUrl(url)) {
+    console.warn('[Security] Blocked unsafe external URL:', url);
+    return false;
+  }
+  shell.openExternal(url);
+  return true;
+}
+
+// Lock a BrowserWindow's webContents against navigation, popups, permissions abuse
+function hardenWebContents(wc) {
+  if (!wc) return;
+  // Block all navigation away from the bundled HTML
+  wc.on('will-navigate', (event, url) => {
+    event.preventDefault();
+    if (isSafeExternalUrl(url)) shell.openExternal(url);
+  });
+  // Block any new window / window.open / target=_blank, route safe ones to OS browser
+  wc.setWindowOpenHandler(({ url }) => {
+    safeOpenExternal(url);
+    return { action: 'deny' };
+  });
+  // Deny ALL permission requests (camera, mic, geolocation, notifications, etc.)
+  wc.session.setPermissionRequestHandler((webContents, permission, callback) => callback(false));
+  wc.session.setPermissionCheckHandler(() => false);
+  // Block webview tags
+  wc.on('will-attach-webview', (event) => event.preventDefault());
+}
+
 function createOverlay() {
   const bounds = getMonitorBounds(settings.monitorIndex);
   overlayWindow = new BrowserWindow({
@@ -127,9 +204,16 @@ function createOverlay() {
     show: !settings.startMinimized,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true, nodeIntegration: false, backgroundThrottling: false
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      experimentalFeatures: false,
+      backgroundThrottling: false
     }
   });
+  hardenWebContents(overlayWindow.webContents);
   overlayWindow.setIgnoreMouseEvents(true, { forward: false });
   overlayWindow.setAlwaysOnTop(true, 'screen-saver');
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -163,9 +247,15 @@ function createSettings() {
     icon: path.join(__dirname, '..', 'assets', 'icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true, nodeIntegration: false
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      experimentalFeatures: false
     }
   });
+  hardenWebContents(settingsWindow.webContents);
   settingsWindow.setMenuBarVisibility(false);
   settingsWindow.loadFile(path.join(__dirname, 'settings.html'));
   settingsWindow.webContents.on('did-finish-load', () => {
@@ -175,10 +265,6 @@ function createSettings() {
       isPrimary: d.id === screen.getPrimaryDisplay().id
     }));
     settingsWindow.webContents.send('init', { settings, displays });
-  });
-  settingsWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
-    return { action: 'deny' };
   });
 }
 
@@ -307,11 +393,33 @@ function registerHotkeys() {
 
 // ========== CUSTOM GAME PRESETS (user-made, hotkey-saveable) ==========
 function getCustomGamePresets() {
-  return store ? (store.get('customGamePresets') || []) : [];
+  if (!store) return [];
+  const raw = store.get('customGamePresets');
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  const clean = [];
+  for (const x of raw) {
+    if (x && typeof x === 'object' && typeof x.id === 'string' && !seen.has(x.id)) {
+      seen.add(x.id);
+      clean.push(x);
+    }
+  }
+  if (clean.length !== raw.length) store.set('customGamePresets', clean);
+  return clean;
 }
 
 function setCustomGamePresets(list) {
-  if (store) store.set('customGamePresets', list);
+  if (!store) return;
+  const arr = Array.isArray(list) ? list : [];
+  const seen = new Set();
+  const clean = [];
+  for (const x of arr) {
+    if (x && typeof x === 'object' && typeof x.id === 'string' && !seen.has(x.id)) {
+      seen.add(x.id);
+      clean.push(x);
+    }
+  }
+  store.set('customGamePresets', clean);
 }
 
 let promptWindow = null;
@@ -348,9 +456,14 @@ function openPromptWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      experimentalFeatures: false
     }
   });
+  hardenWebContents(promptWindow.webContents);
   promptWindow.loadFile(path.join(__dirname, 'prompt.html'));
   promptWindow.once('ready-to-show', () => {
     promptWindow.show();
@@ -404,6 +517,7 @@ ipcMain.handle('prompt:cancel', () => {
 ipcMain.handle('customGamePreset:list', () => getCustomGamePresets());
 
 ipcMain.handle('customGamePreset:apply', (event, id) => {
+  if (typeof id !== 'string' || id.length > 100) return { ok: false, error: 'Invalid id' };
   const list = getCustomGamePresets();
   const preset = list.find(x => x.id === id);
   if (!preset) return { ok: false, error: 'Not found' };
@@ -415,6 +529,7 @@ ipcMain.handle('customGamePreset:apply', (event, id) => {
 });
 
 ipcMain.handle('customGamePreset:delete', (event, id) => {
+  if (typeof id !== 'string' || id.length > 100) return { ok: false, error: 'Invalid id' };
   let list = getCustomGamePresets();
   list = list.filter(x => x.id !== id);
   setCustomGamePresets(list);
@@ -465,28 +580,96 @@ async function incrementCommunityCount(id) {
   }
 }
 
+// Whitelist of field names that renderer is allowed to change via settings:set.
+// Internal fields like _appliedCommunityId, profiles, activeProfile are NOT in this list —
+// those can only be changed via their dedicated handlers.
+const SETTABLE_FIELDS = {
+  // visual
+  shape: 'string', customImage: 'string_or_null',
+  size: 'number', thickness: 'number', gapSize: 'number', rotation: 'number', opacity: 'number',
+  color: 'hex', outline: 'bool', outlineColor: 'hex', outlineThickness: 'number',
+  centerDot: 'bool', centerDotSize: 'number', centerDotColor: 'hex',
+  armTop: 'number', armBottom: 'number', armLeft: 'number', armRight: 'number',
+  customImageSize: 'number',
+  // display
+  offsetX: 'number', offsetY: 'number', monitorIndex: 'number',
+  hideOnCapture: 'bool', startWithWindows: 'bool', startMinimized: 'bool',
+  // hotkeys
+  hotkeyToggle: 'string', hotkeyHide: 'string', hotkeyReset: 'string'
+};
+
+const ALLOWED_SHAPES = new Set(['cross','dot','t','circle','hybrid','scope','sniper',
+  'x','corners','brackets','chevron','diamond','triangle','star',
+  'ksight','prong3','prong6','double_ring','hollow_cross','plus_dot','custom']);
+
+function sanitizeSettingsPatch(partial) {
+  if (!partial || typeof partial !== 'object' || Array.isArray(partial)) return {};
+  const out = {};
+  for (const [k, v] of Object.entries(partial)) {
+    const kind = SETTABLE_FIELDS[k];
+    if (!kind) continue; // silently drop unknown / internal fields
+    if (kind === 'string') {
+      if (typeof v !== 'string') continue;
+      if (v.length > 200) continue;
+      if (k === 'shape' && !ALLOWED_SHAPES.has(v)) continue;
+      out[k] = v;
+    } else if (kind === 'string_or_null') {
+      if (v === null || v === undefined) { out[k] = null; continue; }
+      if (typeof v !== 'string') continue;
+      if (v.length > 2000000) continue; // up to 2MB for base64 image data
+      // For customImage specifically: must be a valid data URI of an image type
+      if (k === 'customImage') {
+        if (v.length === 0) { out[k] = null; continue; }
+        if (!/^data:image\/(png|jpe?g|gif|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/i.test(v)) continue;
+      }
+      out[k] = v;
+    } else if (kind === 'number') {
+      const n = Number(v);
+      if (!Number.isFinite(n)) continue;
+      // Clamp to reasonable bounds for any number field
+      if (k === 'monitorIndex') { if (n < 0 || n > 16) continue; out[k] = Math.floor(n); }
+      else if (k === 'offsetX' || k === 'offsetY') { if (Math.abs(n) > 10000) continue; out[k] = Math.floor(n); }
+      else if (k === 'rotation') { if (n < 0 || n > 360) continue; out[k] = n; }
+      else if (k === 'opacity') { if (n < 0 || n > 100) continue; out[k] = n; }
+      else if (k === 'size' || k === 'customImageSize') { if (n < 1 || n > 500) continue; out[k] = n; }
+      else if (k === 'thickness' || k === 'outlineThickness' || k === 'centerDotSize') { if (n < 0 || n > 30) continue; out[k] = n; }
+      else if (k === 'gapSize') { if (n < 0 || n > 200) continue; out[k] = n; }
+      else if (k === 'armTop' || k === 'armBottom' || k === 'armLeft' || k === 'armRight') { if (n < 0 || n > 300) continue; out[k] = n; }
+      else { out[k] = n; }
+    } else if (kind === 'bool') {
+      out[k] = !!v;
+    } else if (kind === 'hex') {
+      if (typeof v !== 'string' || !/^#[0-9A-Fa-f]{6}$/.test(v)) continue;
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
 ipcMain.handle('settings:set', (event, partial) => {
   const oldMonitor = settings.monitorIndex;
   const oldHideCapture = settings.hideOnCapture;
 
-  // If user changes visual crosshair fields, just clear the applied marker
-  // (user is switching away from the community crosshair, but it stays INSTALLED in library)
-  // NO count change - count only changes on Install / Delete from library.
+  // SECURITY: whitelist + validate every field the renderer sends.
+  // Unknown fields (like _appliedCommunityId, profiles, etc.) are silently dropped.
+  const sanitized = sanitizeSettingsPatch(partial);
+
+  // If user changes visual crosshair fields, clear the applied marker
   const visualFields = ['shape', 'size', 'thickness', 'gapSize', 'color', 'opacity',
                         'rotation', 'outline', 'outlineColor', 'outlineThickness',
                         'centerDot', 'centerDotSize', 'centerDotColor', 'customImage',
                         'armTop', 'armBottom', 'armLeft', 'armRight'];
-  const touchesVisual = Object.keys(partial).some(k => visualFields.includes(k));
+  const touchesVisual = Object.keys(sanitized).some(k => visualFields.includes(k));
   if (touchesVisual && settings._appliedCommunityId) {
     delete settings._appliedCommunityId;
   }
 
-  settings = { ...settings, ...partial };
+  settings = { ...settings, ...sanitized };
   saveSettings();
   if (overlayWindow && !overlayWindow.isDestroyed()) {
-    if (partial.monitorIndex !== undefined && partial.monitorIndex !== oldMonitor) repositionOverlay();
-    if (partial.hideOnCapture !== undefined && partial.hideOnCapture !== oldHideCapture) {
-      overlayWindow.setContentProtection(!!partial.hideOnCapture);
+    if (sanitized.monitorIndex !== undefined && sanitized.monitorIndex !== oldMonitor) repositionOverlay();
+    if (sanitized.hideOnCapture !== undefined && sanitized.hideOnCapture !== oldHideCapture) {
+      overlayWindow.setContentProtection(!!sanitized.hideOnCapture);
     }
     overlayWindow.webContents.send('settings:update', settings);
   }
@@ -502,7 +685,18 @@ ipcMain.handle('settings:reset', () => {
   return settings;
 });
 ipcMain.handle('hotkey:rebind', (event, partial) => {
-  settings = { ...settings, ...partial };
+  if (!partial || typeof partial !== 'object') return settings;
+  const allowed = { hotkeyToggle: true, hotkeyHide: true, hotkeyReset: true };
+  const safe = {};
+  for (const [k, v] of Object.entries(partial)) {
+    if (!allowed[k]) continue;
+    if (typeof v !== 'string' || v.length === 0 || v.length > 64) continue;
+    // Accelerator syntax: modifiers + key, like "CommandOrControl+Alt+R"
+    // Allow only letters, digits, +, and standard modifier/key names
+    if (!/^[A-Za-z0-9+ ]+$/.test(v)) continue;
+    safe[k] = v;
+  }
+  settings = { ...settings, ...safe };
   saveSettings();
   registerHotkeys();
   return settings;
@@ -510,20 +704,37 @@ ipcMain.handle('hotkey:rebind', (event, partial) => {
 ipcMain.handle('overlay:toggle', () => { toggleCrosshair(); return crosshairVisible; });
 
 // IPC: profiles
+function isValidProfileName(name) {
+  return typeof name === 'string'
+    && name.length >= 1 && name.length <= 40
+    && /^[A-Za-z0-9 _\-.]+$/.test(name);
+}
+
 ipcMain.handle('profile:save', (event, name) => {
+  if (!isValidProfileName(name)) return settings;
+  settings.profiles = settings.profiles || {};
+  // Cap at 100 profiles to prevent storage abuse
+  if (!settings.profiles[name] && Object.keys(settings.profiles).length >= 100) return settings;
   const profile = { ...settings };
   delete profile.profiles;
   delete profile.activeProfile;
-  settings.profiles = settings.profiles || {};
+  // Also strip internal markers — a stale pointer to a deleted crosshair would
+  // leak into loaded profiles and cause phantom "APPLIED" badges
+  delete profile._appliedCommunityId;
   settings.profiles[name] = profile;
   settings.activeProfile = name;
   saveSettings();
   rebuildTrayMenu();
   return settings;
 });
-ipcMain.handle('profile:load', (event, name) => { loadProfile(name); return settings; });
+ipcMain.handle('profile:load', (event, name) => {
+  if (name !== 'default' && !isValidProfileName(name)) return settings;
+  loadProfile(name);
+  return settings;
+});
 ipcMain.handle('profile:delete', (event, name) => {
   if (name === 'default') return settings;
+  if (!isValidProfileName(name)) return settings;
   if (settings.profiles && settings.profiles[name]) {
     delete settings.profiles[name];
     if (settings.activeProfile === name) settings.activeProfile = 'default';
@@ -588,17 +799,47 @@ ipcMain.handle('app:cancelCalibration', () => {
 });
 ipcMain.handle('app:toggleDebugGrid', () => { toggleDebugGrid(); return { ok: true }; });
 ipcMain.handle('app:quit', () => quitApp());
-ipcMain.handle('app:openExternal', (event, url) => shell.openExternal(url));
+ipcMain.handle('app:openExternal', (event, url) => {
+  return safeOpenExternal(url);
+});
 ipcMain.handle('app:setAutoLaunch', (event, enabled) => {
-  app.setLoginItemSettings({ openAtLogin: enabled, openAsHidden: settings.startMinimized });
-  settings.startWithWindows = enabled;
+  const bool = !!enabled;
+  app.setLoginItemSettings({ openAtLogin: bool, openAsHidden: !!settings.startMinimized });
+  settings.startWithWindows = bool;
   saveSettings();
-  return enabled;
+  return bool;
 });
 
 // IPC: user custom crosshair library
-function getCustomList() { return store ? (store.get('customCrosshairs') || []) : []; }
-function setCustomList(list) { if (store) store.set('customCrosshairs', list); }
+function getCustomList() {
+  if (!store) return [];
+  const raw = store.get('customCrosshairs');
+  if (!Array.isArray(raw)) return [];
+  // Dedupe by id + filter invalid entries
+  const seen = new Set();
+  const clean = [];
+  for (const x of raw) {
+    if (x && typeof x === 'object' && typeof x.id === 'string' && !seen.has(x.id)) {
+      seen.add(x.id);
+      clean.push(x);
+    }
+  }
+  if (clean.length !== raw.length) store.set('customCrosshairs', clean);
+  return clean;
+}
+function setCustomList(list) {
+  if (!store) return;
+  const arr = Array.isArray(list) ? list : [];
+  const seen = new Set();
+  const clean = [];
+  for (const x of arr) {
+    if (x && typeof x === 'object' && typeof x.id === 'string' && !seen.has(x.id)) {
+      seen.add(x.id);
+      clean.push(x);
+    }
+  }
+  store.set('customCrosshairs', clean);
+}
 
 function validateCustomPreset(preset) {
   const allowedShapes = ['cross','dot','t','circle','hybrid','scope','sniper',
@@ -648,6 +889,7 @@ ipcMain.handle('custom:save', (event, { name, preset }) => {
   return { ok: true, list, entry: newEntry };
 });
 ipcMain.handle('custom:delete', (event, id) => {
+  if (typeof id !== 'string' || id.length > 100) return { ok: true, list: getCustomList() };
   let list = getCustomList();
   list = list.filter(x => x.id !== id);
   setCustomList(list);
@@ -657,7 +899,35 @@ ipcMain.handle('custom:delete', (event, id) => {
 // IPC: community backend
 ipcMain.handle('community:getConfig', () => communityConfig);
 ipcMain.handle('community:config', (event, cfg) => {
-  communityConfig = { ...communityConfig, ...cfg };
+  if (!cfg || typeof cfg !== 'object') return { ok: false, error: 'Invalid config' };
+  const next = { ...communityConfig };
+
+  if (cfg.endpoint !== undefined) {
+    if (typeof cfg.endpoint !== 'string' || cfg.endpoint.length > 500) {
+      return { ok: false, error: 'Invalid endpoint' };
+    }
+    // STRICT: must be https and must be a Supabase subdomain
+    let parsed;
+    try { parsed = new URL(cfg.endpoint); } catch { return { ok: false, error: 'Invalid endpoint URL' }; }
+    if (parsed.protocol !== 'https:') return { ok: false, error: 'Endpoint must be https' };
+    if (!/^[a-z0-9-]+\.supabase\.co$/i.test(parsed.hostname)) {
+      return { ok: false, error: 'Endpoint must be a *.supabase.co domain' };
+    }
+    next.endpoint = cfg.endpoint.replace(/\/$/, '');
+  }
+
+  if (cfg.apiKey !== undefined) {
+    if (typeof cfg.apiKey !== 'string' || cfg.apiKey.length < 20 || cfg.apiKey.length > 1000) {
+      return { ok: false, error: 'Invalid API key' };
+    }
+    // Supabase JWTs are base64 segments separated by dots
+    if (!/^[A-Za-z0-9_\-.]+$/.test(cfg.apiKey)) {
+      return { ok: false, error: 'API key contains invalid characters' };
+    }
+    next.apiKey = cfg.apiKey;
+  }
+
+  communityConfig = next;
   saveCommunityConfig();
   return communityConfig;
 });
@@ -666,6 +936,13 @@ async function supabaseFetch(urlPath, options = {}) {
   if (!communityConfig.endpoint || !communityConfig.apiKey) {
     throw new Error('Community backend not configured');
   }
+  // Defense in depth: re-validate endpoint at every fetch
+  let parsed;
+  try { parsed = new URL(communityConfig.endpoint); } catch { throw new Error('Invalid endpoint'); }
+  if (parsed.protocol !== 'https:') throw new Error('Endpoint must be https');
+  if (!/^[a-z0-9-]+\.supabase\.co$/i.test(parsed.hostname)) {
+    throw new Error('Endpoint must be a *.supabase.co domain');
+  }
   const url = communityConfig.endpoint.replace(/\/$/, '') + '/rest/v1' + urlPath;
   const headers = {
     'apikey': communityConfig.apiKey,
@@ -673,12 +950,20 @@ async function supabaseFetch(urlPath, options = {}) {
     'Content-Type': 'application/json',
     ...(options.headers || {})
   };
-  const res = await fetch(url, { ...options, headers });
+  // Hard timeout prevents the app from hanging forever on a bad network
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  let res;
+  try {
+    res = await fetch(url, { ...options, headers, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
   if (!res.ok) {
     const txt = await res.text();
-    throw new Error(`Backend error ${res.status}: ${txt}`);
+    // Truncate raw error to prevent log flooding
+    throw new Error(`Backend error ${res.status}: ${String(txt).slice(0, 500)}`);
   }
-  // Handle empty response body (e.g. when Prefer: return=minimal is set)
   const text = await res.text();
   if (!text) return null;
   try {
@@ -716,12 +1001,18 @@ function sanitizeCommunityPreset(preset) {
 }
 
 ipcMain.handle('community:list', async (event, params = {}) => {
-  const { search = '', game = '', sort = 'popular', page = 0, limit = 20 } = params;
+  if (!params || typeof params !== 'object') params = {};
+  const search = typeof params.search === 'string' ? params.search : '';
+  const game = typeof params.game === 'string' ? params.game : '';
+  const sort = typeof params.sort === 'string' ? params.sort : 'popular';
+  const page = Number.isFinite(Number(params.page)) ? Math.max(0, Math.min(1000, Math.floor(Number(params.page)))) : 0;
+  const limit = Number.isFinite(Number(params.limit)) ? Math.max(1, Math.min(50, Math.floor(Number(params.limit)))) : 20;
+
   let query = '/crosshairs?select=*&verified=eq.true';
-  if (game) query += `&game=eq.${encodeURIComponent(game)}`;
+  if (game && /^[a-z0-9_]{1,30}$/i.test(game)) query += `&game=eq.${encodeURIComponent(game)}`;
   if (search && search.trim()) {
-    // Supabase PostgREST: escape reserved chars in ilike patterns
-    const safe = search.trim().replace(/[%_,()]/g, '').slice(0, 40);
+    // Strip reserved ilike chars + any non-safe chars to prevent PostgREST injection
+    const safe = search.trim().replace(/[%_,()<>"'\\]/g, '').slice(0, 40);
     if (safe.length > 0) {
       const pattern = encodeURIComponent(`*${safe}*`);
       query += `&or=(name.ilike.${pattern},author.ilike.${pattern},tags.ilike.${pattern},description.ilike.${pattern})`;
@@ -735,14 +1026,16 @@ ipcMain.handle('community:list', async (event, params = {}) => {
     const data = await supabaseFetch(query);
     return { ok: true, items: data || [] };
   } catch (e) {
-    console.error('Community list query:', query, 'error:', e.message);
+    console.error('Community list query failed:', e.message);
     return { ok: false, error: e.message };
   }
 });
 
 ipcMain.handle('community:upload', async (event, data) => {
-  if (!data.name || data.name.length < 2 || data.name.length > 40) return { ok: false, error: 'Name must be 2-40 characters' };
-  if (!data.author || data.author.length < 2 || data.author.length > 20) return { ok: false, error: 'Author tag must be 2-20 characters' };
+  if (!ipcRateLimit('community:upload', 5, 60000)) return { ok: false, error: 'Too many uploads, slow down' };
+  if (!data || typeof data !== 'object') return { ok: false, error: 'Invalid data' };
+  if (!data.name || typeof data.name !== 'string' || data.name.length < 2 || data.name.length > 40) return { ok: false, error: 'Name must be 2-40 characters' };
+  if (!data.author || typeof data.author !== 'string' || data.author.length < 2 || data.author.length > 20) return { ok: false, error: 'Author tag must be 2-20 characters' };
   if (!data.preset || typeof data.preset !== 'object') return { ok: false, error: 'Invalid preset' };
   const safePreset = sanitizeCommunityPreset(data.preset);
   if (!safePreset) return { ok: false, error: 'Preset failed validation' };
@@ -788,24 +1081,65 @@ function getDeviceId() {
 
 // ========== INSTALLED CROSSHAIRS (downloaded from community) ==========
 function getInstalledCrosshairs() {
-  return store ? (store.get('installedCrosshairs') || []) : [];
+  if (!store) return [];
+  const raw = store.get('installedCrosshairs') || [];
+  // Dedupe by id (defensive against historical duplicates from older buggy versions)
+  const seen = new Set();
+  const deduped = [];
+  for (const x of raw) {
+    if (x && x.id && !seen.has(x.id)) {
+      seen.add(x.id);
+      deduped.push(x);
+    }
+  }
+  // If we removed any duplicates, persist the cleaned list back
+  if (deduped.length !== raw.length) {
+    store.set('installedCrosshairs', deduped);
+    console.log(`[Dedupe] Removed ${raw.length - deduped.length} duplicate crosshair(s) from installed library`);
+  }
+  return deduped;
 }
 function setInstalledCrosshairs(list) {
-  if (store) store.set('installedCrosshairs', list);
+  if (!store) return;
+  // Final dedup safety net before writing
+  const seen = new Set();
+  const clean = [];
+  for (const x of list || []) {
+    if (x && x.id && !seen.has(x.id)) {
+      seen.add(x.id);
+      clean.push(x);
+    }
+  }
+  store.set('installedCrosshairs', clean);
 }
 
+// In-flight install lock per crosshair id, prevents parallel race condition
+const installInFlight = new Set();
+
 ipcMain.handle('community:install', async (event, id) => {
+  // Rate limit: 20 installs per minute max (generous for normal use, blocks spam)
+  if (!ipcRateLimit('community:install', 20, 60000)) return { ok: false, error: 'Too many install attempts, slow down' };
+  // Validate ID: must be a UUID or safe-ish string
+  if (typeof id !== 'string' || id.length < 4 || id.length > 100 || !/^[A-Za-z0-9_-]+$/.test(id)) {
+    return { ok: false, error: 'Invalid id' };
+  }
+  // Lock guard: if same crosshair install is in flight, bail with reapply
+  if (installInFlight.has(id)) {
+    console.log('[Install] Already in flight for', id, '- bailing');
+    return { ok: false, error: 'Install already in progress, please wait' };
+  }
+  installInFlight.add(id);
+
   try {
     const data = await supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}&select=*`);
     if (!data || !data.length) return { ok: false, error: 'Not found' };
     const item = data[0];
 
-    const installed = getInstalledCrosshairs();
-    const alreadyInstalled = installed.find(x => x.id === id);
+    // PRE-CHECK: already installed?
+    let installed = getInstalledCrosshairs();
+    let alreadyInstalled = installed.find(x => x.id === id);
 
-    // Already installed: just re-apply silently (no count change, no error)
-    // This covers the case where user clicks button while already installed (shouldn't happen
-    // because button would be disabled, but just in case)
+    // Already installed: just re-apply silently (no count change, no duplicate entry)
     if (alreadyInstalled) {
       const safe = sanitizeCommunityPreset(alreadyInstalled.preset);
       if (!safe) return { ok: false, error: 'Preset failed validation' };
@@ -826,6 +1160,20 @@ ipcMain.handle('community:install', async (event, id) => {
       // Rollback on validation failure
       decrementCommunityCount(id);
       return { ok: false, error: 'Preset failed validation' };
+    }
+
+    // POST-AWAIT RE-CHECK: did another concurrent invocation install it during our await?
+    // (extra safety beyond the lock, in case the lock somehow gets bypassed)
+    installed = getInstalledCrosshairs();
+    alreadyInstalled = installed.find(x => x.id === id);
+    if (alreadyInstalled) {
+      // Rollback the duplicate increment we just did
+      decrementCommunityCount(id);
+      // Just apply the already-installed entry
+      settings = { ...settings, ...alreadyInstalled.preset, _appliedCommunityId: id };
+      saveSettings();
+      broadcastSettings();
+      return { ok: true, settings, entry: alreadyInstalled, reapplied: true };
     }
 
     const entry = {
@@ -855,11 +1203,17 @@ ipcMain.handle('community:install', async (event, id) => {
     return { ok: true, settings, entry };
   } catch (e) {
     return { ok: false, error: e.message };
+  } finally {
+    installInFlight.delete(id);
   }
 });
 
 ipcMain.handle('community:uninstall', async (event, id) => {
   try {
+    if (!ipcRateLimit('community:uninstall', 30, 60000)) return { ok: false, error: 'Too many uninstall attempts, slow down' };
+    if (typeof id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(id) || id.length > 100) {
+      return { ok: false, error: 'Invalid id' };
+    }
     let installed = getInstalledCrosshairs();
     const entry = installed.find(x => x.id === id);
     if (!entry) return { ok: false, error: 'Not in your installed library' };
@@ -921,10 +1275,13 @@ ipcMain.handle('community:applyInstalled', (event, id) => {
 // ========== REVIEWS & RATINGS ==========
 ipcMain.handle('community:submitReview', async (event, { crosshairId, rating, reviewText }) => {
   try {
-    if (!crosshairId) return { ok: false, error: 'Crosshair ID required' };
+    if (!ipcRateLimit('community:submitReview', 10, 60000)) return { ok: false, error: 'Too many review submissions, slow down' };
+    if (typeof crosshairId !== 'string' || !/^[A-Za-z0-9_-]+$/.test(crosshairId) || crosshairId.length > 100) {
+      return { ok: false, error: 'Invalid crosshair ID' };
+    }
     const r = parseInt(rating);
     if (isNaN(r) || r < 1 || r > 5) return { ok: false, error: 'Rating must be 1-5' };
-    const text = (reviewText || '').slice(0, 500);
+    const text = (typeof reviewText === 'string' ? reviewText : '').slice(0, 500);
     const deviceId = getDeviceId();
 
     await supabaseFetch('/rpc/submit_review', {
@@ -983,11 +1340,16 @@ ipcMain.handle('community:getDetails', async (event, crosshairId) => {
 
 ipcMain.handle('community:report', async (event, { id, reason }) => {
   try {
+    if (!ipcRateLimit('community:report', 10, 60000)) return { ok: false, error: 'Too many reports, slow down' };
+    if (typeof id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(id) || id.length > 100) {
+      return { ok: false, error: 'Invalid id' };
+    }
+    const safeReason = (typeof reason === 'string' ? reason : 'inappropriate').slice(0, 200);
     await supabaseFetch('/reports', {
       method: 'POST',
       body: JSON.stringify({
         crosshair_id: id,
-        reason: (reason || 'inappropriate').slice(0, 200),
+        reason: safeReason,
         reported_at: new Date().toISOString()
       })
     });
@@ -1013,20 +1375,46 @@ ipcMain.handle('gamePreset:getResolution', () => {
 
 // List of installed community game presets (so we don't show Install on ones already installed)
 function getInstalledGamePresets() {
-  return store ? (store.get('installedGamePresets') || []) : [];
+  if (!store) return [];
+  const raw = store.get('installedGamePresets') || [];
+  // Dedupe by id (defensive)
+  const seen = new Set();
+  const deduped = [];
+  for (const x of raw) {
+    if (x && x.id && !seen.has(x.id)) {
+      seen.add(x.id);
+      deduped.push(x);
+    }
+  }
+  if (deduped.length !== raw.length) {
+    store.set('installedGamePresets', deduped);
+    console.log(`[Dedupe] Removed ${raw.length - deduped.length} duplicate game preset(s)`);
+  }
+  return deduped;
 }
 function setInstalledGamePresets(list) {
-  if (store) store.set('installedGamePresets', list);
+  if (!store) return;
+  const seen = new Set();
+  const clean = [];
+  for (const x of list || []) {
+    if (x && x.id && !seen.has(x.id)) {
+      seen.add(x.id);
+      clean.push(x);
+    }
+  }
+  store.set('installedGamePresets', clean);
 }
 
 // Upload a game preset to Supabase
 ipcMain.handle('gamePreset:upload', async (event, data) => {
   try {
-    const name = (data.name || '').trim();
-    const author = (data.author || 'anonymous').trim();
-    const game = (data.game || 'other').trim().toLowerCase();
-    const resolution = (data.resolution || '').trim();
-    const displayMode = (data.displayMode || 'borderless').toLowerCase();
+    if (!ipcRateLimit('gamePreset:upload', 5, 60000)) return { ok: false, error: 'Too many uploads, slow down' };
+    if (!data || typeof data !== 'object') return { ok: false, error: 'Invalid data' };
+    const name = (typeof data.name === 'string' ? data.name : '').trim();
+    const author = (typeof data.author === 'string' ? data.author : 'anonymous').trim();
+    const game = (typeof data.game === 'string' ? data.game : 'other').trim().toLowerCase();
+    const resolution = (typeof data.resolution === 'string' ? data.resolution : '').trim();
+    const displayMode = (typeof data.displayMode === 'string' ? data.displayMode : 'borderless').toLowerCase();
     const offsetX = parseInt(data.offsetX);
     const offsetY = parseInt(data.offsetY);
     const description = (data.description || '').slice(0, 300);
@@ -1069,15 +1457,22 @@ ipcMain.handle('gamePreset:upload', async (event, data) => {
 
 // List game presets with filters (resolution, displayMode, game, search, sort)
 ipcMain.handle('gamePreset:list', async (event, params = {}) => {
-  const { search = '', game = '', resolution = '', displayMode = '',
-          sort = 'popular', page = 0, limit = 30 } = params;
+  if (!params || typeof params !== 'object') params = {};
+  const search = typeof params.search === 'string' ? params.search : '';
+  const game = typeof params.game === 'string' ? params.game : '';
+  const resolution = typeof params.resolution === 'string' ? params.resolution : '';
+  const displayMode = typeof params.displayMode === 'string' ? params.displayMode : '';
+  const sort = typeof params.sort === 'string' ? params.sort : 'popular';
+  const page = Number.isFinite(Number(params.page)) ? Math.max(0, Math.min(1000, Math.floor(Number(params.page)))) : 0;
+  const limit = Number.isFinite(Number(params.limit)) ? Math.max(1, Math.min(60, Math.floor(Number(params.limit)))) : 30;
+
   try {
     let query = '/game_presets?select=*&verified=eq.true';
-    if (game) query += `&game=eq.${encodeURIComponent(game)}`;
-    if (resolution) query += `&resolution=eq.${encodeURIComponent(resolution)}`;
-    if (displayMode) query += `&display_mode=eq.${encodeURIComponent(displayMode)}`;
+    if (game && /^[a-z0-9_]{1,30}$/i.test(game)) query += `&game=eq.${encodeURIComponent(game)}`;
+    if (resolution && /^\d{3,5}x\d{3,5}$/.test(resolution)) query += `&resolution=eq.${encodeURIComponent(resolution)}`;
+    if (displayMode && /^[a-z_]{1,30}$/.test(displayMode)) query += `&display_mode=eq.${encodeURIComponent(displayMode)}`;
     if (search && search.trim()) {
-      const safe = search.trim().replace(/[%_,()]/g, '').slice(0, 40);
+      const safe = search.trim().replace(/[%_,()<>"'\\]/g, '').slice(0, 40);
       if (safe.length > 0) {
         const pattern = encodeURIComponent(`*${safe}*`);
         query += `&or=(name.ilike.${pattern},author.ilike.${pattern})`;
@@ -1095,14 +1490,26 @@ ipcMain.handle('gamePreset:list', async (event, params = {}) => {
   }
 });
 
+// In-flight lock for GP install (prevents race condition)
+const gpInstallInFlight = new Set();
+
 // Install a game preset (increment counter + save locally + apply offset)
 ipcMain.handle('gamePreset:install', async (event, id) => {
+  if (!ipcRateLimit('gamePreset:install', 20, 60000)) return { ok: false, error: 'Too many install attempts, slow down' };
+  if (typeof id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(id) || id.length > 100) {
+    return { ok: false, error: 'Invalid id' };
+  }
+  if (gpInstallInFlight.has(id)) {
+    return { ok: false, error: 'Install already in progress, please wait' };
+  }
+  gpInstallInFlight.add(id);
+
   try {
     const data = await supabaseFetch(`/game_presets?id=eq.${encodeURIComponent(id)}&select=*`);
     if (!data || !data.length) return { ok: false, error: 'Not found' };
     const item = data[0];
 
-    const installed = getInstalledGamePresets();
+    let installed = getInstalledGamePresets();
     if (installed.find(x => x.id === id)) {
       return { ok: false, error: 'Already installed.', alreadyInstalled: true };
     }
@@ -1116,6 +1523,19 @@ ipcMain.handle('gamePreset:install', async (event, id) => {
     } catch (err) {
       console.error('Increment game preset downloads RPC failed:', err.message);
       return { ok: false, error: 'Could not update download count: ' + err.message };
+    }
+
+    // POST-AWAIT RE-CHECK: did another concurrent invocation install it?
+    installed = getInstalledGamePresets();
+    if (installed.find(x => x.id === id)) {
+      // Rollback the duplicate increment
+      try {
+        await supabaseFetch('/rpc/decrement_game_preset_downloads', {
+          method: 'POST',
+          body: JSON.stringify({ preset_id_param: id })
+        });
+      } catch (e) { console.error('Rollback decrement failed:', e.message); }
+      return { ok: false, error: 'Already installed.', alreadyInstalled: true };
     }
 
     // Save to local installed list
@@ -1143,12 +1563,18 @@ ipcMain.handle('gamePreset:install', async (event, id) => {
     return { ok: true, entry, settings };
   } catch (e) {
     return { ok: false, error: e.message };
+  } finally {
+    gpInstallInFlight.delete(id);
   }
 });
 
 // Uninstall a game preset (decrement + remove from local list)
 ipcMain.handle('gamePreset:uninstall', async (event, id) => {
   try {
+    if (!ipcRateLimit('gamePreset:uninstall', 30, 60000)) return { ok: false, error: 'Too many uninstall attempts, slow down' };
+    if (typeof id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(id) || id.length > 100) {
+      return { ok: false, error: 'Invalid id' };
+    }
     let installed = getInstalledGamePresets();
     const entry = installed.find(x => x.id === id);
     if (!entry) return { ok: false, error: 'Not in your installed library' };
@@ -1188,11 +1614,16 @@ ipcMain.handle('gamePreset:applyInstalled', (event, id) => {
 // Report a community game preset
 ipcMain.handle('gamePreset:report', async (event, { id, reason }) => {
   try {
+    if (!ipcRateLimit('gamePreset:report', 10, 60000)) return { ok: false, error: 'Too many reports, slow down' };
+    if (typeof id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(id) || id.length > 100) {
+      return { ok: false, error: 'Invalid id' };
+    }
+    const safeReason = (typeof reason === 'string' ? reason : 'inappropriate').slice(0, 200);
     await supabaseFetch('/game_preset_reports', {
       method: 'POST',
       body: JSON.stringify({
         preset_id: id,
-        reason: (reason || 'inappropriate').slice(0, 200),
+        reason: safeReason,
         reported_at: new Date().toISOString()
       })
     });
@@ -1256,11 +1687,25 @@ async function runCleanupMode() {
   try {
     const Store = (await import('electron-store')).default;
     const tempStore = new Store({ name: 'crosshair-f-config' });
-    const installedCrosshairs = tempStore.get('installedCrosshairs') || [];
-    const installedGamePresets = tempStore.get('installedGamePresets') || [];
+    const installedCrosshairs = Array.isArray(tempStore.get('installedCrosshairs')) ? tempStore.get('installedCrosshairs') : [];
+    const installedGamePresets = Array.isArray(tempStore.get('installedGamePresets')) ? tempStore.get('installedGamePresets') : [];
     const savedCfg = tempStore.get('community') || {};
-    const endpoint = (savedCfg.endpoint || DEFAULT_COMMUNITY_CONFIG.endpoint).replace(/\/$/, '');
-    const apiKey = savedCfg.apiKey || DEFAULT_COMMUNITY_CONFIG.apiKey;
+
+    // Validate saved endpoint - reject tampered config, fall back to baked-in default
+    let endpoint = DEFAULT_COMMUNITY_CONFIG.endpoint;
+    let apiKey = DEFAULT_COMMUNITY_CONFIG.apiKey;
+    if (savedCfg && typeof savedCfg.endpoint === 'string' && typeof savedCfg.apiKey === 'string') {
+      try {
+        const parsed = new URL(savedCfg.endpoint);
+        if (parsed.protocol === 'https:'
+            && /^[a-z0-9-]+\.supabase\.co$/i.test(parsed.hostname)
+            && /^[A-Za-z0-9_\-.]+$/.test(savedCfg.apiKey)
+            && savedCfg.apiKey.length >= 20 && savedCfg.apiKey.length <= 1000) {
+          endpoint = savedCfg.endpoint.replace(/\/$/, '');
+          apiKey = savedCfg.apiKey;
+        }
+      } catch { /* fall through to defaults */ }
+    }
 
     console.log(`[Cleanup] Decrementing ${installedCrosshairs.length} crosshair installs + ${installedGamePresets.length} game preset installs...`);
 
@@ -1280,12 +1725,17 @@ async function runCleanupMode() {
       }).catch(() => null).finally(() => clearTimeout(timer));
     };
 
+    // Filter to only valid IDs - skip any tampered or corrupt entries
+    const validId = (id) => typeof id === 'string' && /^[A-Za-z0-9_-]+$/.test(id) && id.length <= 100;
+    const validCrosshairs = installedCrosshairs.filter(x => x && validId(x.id));
+    const validGamePresets = installedGamePresets.filter(x => x && validId(x.id));
+
     // Decrement crosshair installs
-    const crosshairPromises = installedCrosshairs.map(item =>
+    const crosshairPromises = validCrosshairs.map(item =>
       decrementCall('decrement_downloads', 'crosshair_id_param', item.id)
     );
     // Decrement game preset installs
-    const gamePresetPromises = installedGamePresets.map(item =>
+    const gamePresetPromises = validGamePresets.map(item =>
       decrementCall('decrement_game_preset_downloads', 'preset_id_param', item.id)
     );
 
@@ -1303,12 +1753,78 @@ async function runCleanupMode() {
   app.quit();
 }
 
+// ========== GLOBAL SESSION SECURITY HARDENING ==========
+// Applies a belt-and-suspenders layer on top of HTML meta CSP tags.
+function applySessionSecurity() {
+  try {
+    const { session } = require('electron');
+    const defaultSession = session.defaultSession;
+
+    // Inject CSP header on every response - belt and suspenders over HTML meta tags
+    defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      const isHttpUrl = details.url.startsWith('http');
+      const csp = [
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "font-src 'self' https://fonts.gstatic.com",
+        "img-src 'self' data:",
+        "connect-src 'self' https://*.supabase.co",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'none'",
+        "frame-src 'none'",
+        "frame-ancestors 'none'"
+      ].join('; ');
+
+      // Only apply CSP to our own bundled files (file://), let Supabase API responses through unchanged
+      if (!isHttpUrl) {
+        callback({
+          responseHeaders: {
+            ...details.responseHeaders,
+            'Content-Security-Policy': [csp],
+            'X-Frame-Options': ['DENY'],
+            'X-Content-Type-Options': ['nosniff'],
+            'Referrer-Policy': ['no-referrer']
+          }
+        });
+      } else {
+        callback({ responseHeaders: details.responseHeaders });
+      }
+    });
+
+    // Block all permission requests globally (camera, mic, geolocation, notifications, etc.)
+    defaultSession.setPermissionRequestHandler((wc, permission, cb) => cb(false));
+    defaultSession.setPermissionCheckHandler(() => false);
+  } catch (e) {
+    console.error('[Security] applySessionSecurity failed:', e.message);
+  }
+}
+
+// Block every future BrowserWindow's renderer from navigating or opening new windows.
+// Catches any case we might have missed at window construction time.
+app.on('web-contents-created', (event, contents) => {
+  contents.on('will-navigate', (ev, url) => {
+    // Only allow navigating to our own file:// URLs
+    if (!url.startsWith('file://')) {
+      ev.preventDefault();
+      if (isSafeExternalUrl(url)) shell.openExternal(url);
+    }
+  });
+  contents.setWindowOpenHandler(({ url }) => {
+    safeOpenExternal(url);
+    return { action: 'deny' };
+  });
+  contents.on('will-attach-webview', (ev) => ev.preventDefault());
+});
+
 // App lifecycle
 app.whenReady().then(async () => {
   if (isCleanupMode) {
     await runCleanupMode();
     return;
   }
+  applySessionSecurity();
   await loadStore();
   const accepted = await showFirstLaunchDisclaimer();
   if (!accepted) return;

@@ -317,6 +317,24 @@ function buildShape(s) {
       inner += `<circle cx="0" cy="0" r="${dr}" fill="${color}" opacity="${s.opacity/100}" />`;
       break;
     }
+    case 'prong3': {
+      const angles = [-90, 30, 150];
+      const lines = angles.map(a => { const r=(a*Math.PI)/180; return [Math.cos(r)*gap, Math.sin(r)*gap, Math.cos(r)*half, Math.sin(r)*half]; });
+      if (s.outline) for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="${outline}" stroke-width="${t + ow*2}" />`;
+      for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="${color}" stroke-width="${t}" opacity="${s.opacity/100}" />`;
+      break;
+    }
+    case 'prong6': {
+      const angles = [0, 60, 120, 180, 240, 300];
+      const lines = angles.map(a => { const r=(a*Math.PI)/180; return [Math.cos(r)*gap, Math.sin(r)*gap, Math.cos(r)*half, Math.sin(r)*half]; });
+      if (s.outline) for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="${outline}" stroke-width="${t + ow*2}" />`;
+      for (const [x1,y1,x2,y2] of lines)
+        inner += `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="${color}" stroke-width="${t}" opacity="${s.opacity/100}" />`;
+      break;
+    }
     default: break;
   }
 

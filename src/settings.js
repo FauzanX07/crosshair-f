@@ -780,7 +780,7 @@ async function refreshCommunity() {
     limit: 20
   });
   if (!result.ok) {
-    grid.innerHTML = `<p class="muted" style="grid-column:1/-1;text-align:center;padding:20px;color:var(--danger)">Error: ${result.error}</p>`;
+    grid.innerHTML = `<p class="muted" style="grid-column:1/-1;text-align:center;padding:20px;color:var(--danger)">Error: ${escapeHtml(result.error || '')}</p>`;
     return;
   }
   communityState.items = result.items || [];
@@ -917,37 +917,51 @@ function renderStars(rating) {
 }
 
 // ===== INSTALLED FROM COMMUNITY GALLERY =====
+let _refreshingInstalled = false;
 async function refreshInstalledGallery() {
-  const container = document.getElementById('installed-gallery');
-  if (!container) return;
-  container.innerHTML = '';
-  const list = await api.communityListInstalled();
-  if (!list || !list.length) {
-    container.innerHTML = '<p class="muted" style="grid-column:1/-1;text-align:center;padding:20px;border:1px dashed var(--line)">No community crosshairs installed yet. Browse Community to find and install some!</p>';
-    return;
-  }
-  const activeId = currentSettings ? currentSettings._appliedCommunityId : null;
-  for (const item of list) {
-    const card = document.createElement('div');
-    card.className = 'preset-card' + (item.id === activeId ? ' active' : '');
-    const previewSvg = renderMiniSVG(item.preset || {});
-    const isActive = item.id === activeId;
-    card.innerHTML = `
-      <div class="card-menu">
-        <button class="card-menu-btn" title="More">⋮</button>
-       <div class="card-menu-popover">
-          <button data-act="delete" class="danger">Delete</button>
+  // Guard against concurrent refreshes (e.g. applyToUI hook + manual call colliding)
+  if (_refreshingInstalled) return;
+  _refreshingInstalled = true;
+  try {
+    const container = document.getElementById('installed-gallery');
+    if (!container) return;
+    container.innerHTML = '';
+    const rawList = await api.communityListInstalled();
+    // Defensive dedupe by id (in case backend ever returns duplicates)
+    const seen = new Set();
+    const list = [];
+    for (const x of (rawList || [])) {
+      if (x && x.id && !seen.has(x.id)) {
+        seen.add(x.id);
+        list.push(x);
+      }
+    }
+    if (!list.length) {
+      container.innerHTML = '<p class="muted" style="grid-column:1/-1;text-align:center;padding:20px;border:1px dashed var(--line)">No community crosshairs installed yet. Browse Community to find and install some!</p>';
+      return;
+    }
+    const activeId = currentSettings ? currentSettings._appliedCommunityId : null;
+    for (const item of list) {
+      const card = document.createElement('div');
+      card.className = 'preset-card' + (item.id === activeId ? ' active' : '');
+      const previewSvg = renderMiniSVG(item.preset || {});
+      const isActive = item.id === activeId;
+      card.innerHTML = `
+        <div class="card-menu">
+          <button class="card-menu-btn" title="More">⋮</button>
+         <div class="card-menu-popover">
+            <button data-act="delete" class="danger">Delete</button>
+          </div>
         </div>
-      </div>
-      ${isActive ? '<span class="applied-badge">✓ APPLIED</span>' : ''}
-      <div class="preset-thumb">${previewSvg}</div>
-      <div class="preset-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
-      <div class="preset-cat">BY @${escapeHtml(item.author).toUpperCase()}</div>
-    `;
+        ${isActive ? '<span class="applied-badge">✓ APPLIED</span>' : ''}
+        <div class="preset-thumb">${previewSvg}</div>
+        <div class="preset-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
+        <div class="preset-cat">BY @${escapeHtml(item.author).toUpperCase()}</div>
+      `;
 
-    const menuBtn = card.querySelector('.card-menu-btn');
-    const popover = card.querySelector('.card-menu-popover');
-    menuBtn.addEventListener('click', e => {
+      const menuBtn = card.querySelector('.card-menu-btn');
+      const popover = card.querySelector('.card-menu-popover');
+      menuBtn.addEventListener('click', e => {
       e.stopPropagation();
       document.querySelectorAll('.card-menu-popover.open').forEach(p => { if (p !== popover) p.classList.remove('open'); });
       popover.classList.toggle('open');
@@ -976,6 +990,9 @@ async function refreshInstalledGallery() {
     });
 
     container.appendChild(card);
+    }
+  } finally {
+    _refreshingInstalled = false;
   }
 }
 
