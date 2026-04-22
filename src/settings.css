@@ -1850,3 +1850,108 @@ select, button {
   padding: 4px 10px !important;
   font-size: 10px !important;
 }
+
+/* ============ APPLIED BADGE ON INSTALLED CARD ============ */
+.applied-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: #1e4d2b;
+  color: #4ade80;
+  border: 1px solid #4ade80;
+  padding: 2px 7px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  z-index: 3;
+  pointer-events: none;
+}
+.preset-card.active {
+  border-color: #4ade80;
+}
+
+/* ============ COMMUNITY CARD DETAILS BUTTON - NUCLEAR OVERFLOW FIX ============ */
+.community-card {
+  overflow: hidden !important;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.community-card-actions {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 4px;
+  margin-top: 6px;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  min-width: 0;
+}
+.community-card-actions .btn,
+.community-card-actions button {
+  padding: 6px 2px !important;
+  font-size: 9px !important;
+  letter-spacing: 0.5px !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+  display: block !important;
+}
+
+/* ============ STEPS GUIDE CARD (manual game calibration) ============ */
+.info-card {
+  background: linear-gradient(135deg, rgba(234,77,77,0.03), rgba(0,255,255,0.02));
+}
+.steps-list {
+  list-style: none;
+  counter-reset: step;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 0;
+}
+.steps-list li {
+  counter-increment: step;
+  padding-left: 40px;
+  position: relative;
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+.steps-list li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: -2px;
+  width: 28px;
+  height: 28px;
+  background: var(--accent);
+  color: var(--bg-0);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  clip-path: polygon(0 0, 100% 0, 100% 75%, 75% 100%, 0 100%);
+}
+.steps-list strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.steps-list kbd {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-bottom: 2px solid var(--line);
+  color: var(--text);
+  padding: 1px 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  margin: 0 2px;
+}

@@ -246,7 +246,6 @@ function resetPosition() {
 
 function loadProfile(name) {
   if (name === 'default') {
-    // "Default" means reset to factory defaults
     const preserved = {
       profiles: settings.profiles,
       monitorIndex: settings.monitorIndex,
@@ -265,7 +264,6 @@ function loadProfile(name) {
   }
   const p = (settings.profiles || {})[name];
   if (!p) return;
-  // Loading a profile clears community marker (user abandoning community preset)
   settings = { ...settings, ...p, activeProfile: name, profiles: settings.profiles };
   delete settings._appliedCommunityId;
   saveSettings();
@@ -439,12 +437,41 @@ function quitApp() {
 
 // IPC: basic settings
 ipcMain.handle('settings:get', () => settings);
+// Helper: decrement community download count (fire-and-forget, non-blocking)
+async function decrementCommunityCount(id) {
+  if (!id) return;
+  try {
+    await supabaseFetch('/rpc/decrement_downloads', {
+      method: 'POST',
+      body: JSON.stringify({ crosshair_id_param: id })
+    });
+  } catch (err) {
+    console.error('[Decrement] RPC failed for', id, err.message);
+  }
+}
+
+// Helper: increment community download count
+async function incrementCommunityCount(id) {
+  if (!id) return { ok: true };
+  try {
+    await supabaseFetch('/rpc/increment_downloads', {
+      method: 'POST',
+      body: JSON.stringify({ crosshair_id_param: id })
+    });
+    return { ok: true };
+  } catch (err) {
+    console.error('[Increment] RPC failed for', id, err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
 ipcMain.handle('settings:set', (event, partial) => {
   const oldMonitor = settings.monitorIndex;
   const oldHideCapture = settings.hideOnCapture;
 
-  // If user is changing visual crosshair fields while a community crosshair is applied,
-  // clear the applied-community marker because they're moving away from that preset
+  // If user changes visual crosshair fields, just clear the applied marker
+  // (user is switching away from the community crosshair, but it stays INSTALLED in library)
+  // NO count change - count only changes on Install / Delete from library.
   const visualFields = ['shape', 'size', 'thickness', 'gapSize', 'color', 'opacity',
                         'rotation', 'outline', 'outlineColor', 'outlineThickness',
                         'centerDot', 'centerDotSize', 'centerDotColor', 'customImage',
@@ -467,7 +494,7 @@ ipcMain.handle('settings:set', (event, partial) => {
 });
 ipcMain.handle('settings:reset', () => {
   settings = { ...defaultSettings, profiles: settings.profiles };
-  // _appliedCommunityId not in defaultSettings so it's cleared automatically
+  // _appliedCommunityId auto-cleared because not in defaultSettings
   saveSettings();
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.webContents.send('settings:update', settings);
@@ -748,88 +775,6 @@ function setAppliedSet(list) {
   if (store) store.set('appliedCommunityIds', list);
 }
 
-ipcMain.handle('community:download', async (event, id) => {
-  try {
-    const data = await supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}&select=*`);
-    if (!data || !data.length) return { ok: false, error: 'Not found' };
-    const item = data[0];
-
-    // Local tracking: if this device has already applied this crosshair, DON'T increment
-    const applied = getAppliedSet();
-    const alreadyApplied = applied.includes(id);
-
-    if (!alreadyApplied) {
-      // First-time apply from this device - increment downloads
-      await supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ downloads: (item.downloads || 0) + 1 })
-      }).catch((e) => { console.error('Increment failed:', e.message); });
-      applied.push(id);
-      setAppliedSet(applied);
-    }
-
-    const safe = sanitizeCommunityPreset(item.preset);
-    if (!safe) return { ok: false, error: 'Preset failed validation on download' };
-
-    // Backup current settings so unapply can restore them
-    if (store) store.set('lastAppliedCommunityBackup', { ...settings });
-    settings = { ...settings, ...safe, _appliedCommunityId: id };
-    saveSettings();
-    broadcastSettings();
-    return { ok: true, settings, alreadyApplied };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
-});
-
-ipcMain.handle('community:unapply', async (event, id) => {
-  try {
-    const applied = getAppliedSet();
-    const idx = applied.indexOf(id);
-
-    // IDEMPOTENCY: only decrement if this device actually had it applied.
-    // This prevents count-going-negative after uninstall/reinstall or stale data.
-    if (idx === -1) {
-      // Not in applied list - don't touch the count, just restore backup if any
-      const backup = store ? store.get('lastAppliedCommunityBackup') : null;
-      if (backup) {
-        settings = { ...backup };
-        delete settings._appliedCommunityId;
-        saveSettings();
-        broadcastSettings();
-      }
-      return { ok: true, settings, wasApplied: false };
-    }
-
-    // Fetch current count, decrement by 1 (but never below 0)
-    const data = await supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}&select=*`);
-    if (data && data.length) {
-      const current = data[0].downloads || 0;
-      const newCount = Math.max(0, current - 1);
-      await supabaseFetch(`/crosshairs?id=eq.${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ downloads: newCount })
-      }).catch((e) => { console.error('Decrement failed:', e.message); });
-    }
-
-    // Remove from local applied set
-    applied.splice(idx, 1);
-    setAppliedSet(applied);
-
-    // Restore previous settings
-    const backup = store ? store.get('lastAppliedCommunityBackup') : null;
-    if (backup) {
-      settings = { ...backup };
-      delete settings._appliedCommunityId;
-      saveSettings();
-      broadcastSettings();
-    }
-    return { ok: true, settings, wasApplied: true };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
-});
-
 // ========== DEVICE ID (for review dedup, no accounts) ==========
 function getDeviceId() {
   if (!store) return 'anonymous';
@@ -858,7 +803,9 @@ ipcMain.handle('community:install', async (event, id) => {
     const installed = getInstalledCrosshairs();
     const alreadyInstalled = installed.find(x => x.id === id);
 
-    // If already in library, just re-apply it (no double-count, no duplicate entry)
+    // Already installed: just re-apply silently (no count change, no error)
+    // This covers the case where user clicks button while already installed (shouldn't happen
+    // because button would be disabled, but just in case)
     if (alreadyInstalled) {
       const safe = sanitizeCommunityPreset(alreadyInstalled.preset);
       if (!safe) return { ok: false, error: 'Preset failed validation' };
@@ -868,19 +815,18 @@ ipcMain.handle('community:install', async (event, id) => {
       return { ok: true, settings, entry: alreadyInstalled, reapplied: true };
     }
 
-    // Increment download count via RPC
-    try {
-      await supabaseFetch('/rpc/increment_downloads', {
-        method: 'POST',
-        body: JSON.stringify({ crosshair_id_param: id })
-      });
-    } catch (err) {
-      console.error('Increment RPC failed:', err.message);
-      return { ok: false, error: 'Could not update download count. ' + err.message };
+    // First install: increment count
+    const incResult = await incrementCommunityCount(id);
+    if (!incResult.ok) {
+      return { ok: false, error: 'Could not update download count: ' + incResult.error };
     }
 
     const safe = sanitizeCommunityPreset(item.preset);
-    if (!safe) return { ok: false, error: 'Preset failed validation' };
+    if (!safe) {
+      // Rollback on validation failure
+      decrementCommunityCount(id);
+      return { ok: false, error: 'Preset failed validation' };
+    }
 
     const entry = {
       id: item.id,
@@ -895,12 +841,12 @@ ipcMain.handle('community:install', async (event, id) => {
     installed.push(entry);
     setInstalledCrosshairs(installed);
 
-    // Apply the community crosshair. No backup needed - uninstall resets to factory default.
+    // Apply the just-installed crosshair
     settings = { ...settings, ...safe, _appliedCommunityId: id };
     saveSettings();
     broadcastSettings();
 
-    // Also update the local applied set (for compatibility)
+    // Track in applied set (legacy compat)
     const applied = getAppliedSet();
     if (!applied.includes(id)) {
       applied.push(id);
@@ -920,47 +866,25 @@ ipcMain.handle('community:uninstall', async (event, id) => {
 
     const wasApplied = settings._appliedCommunityId === id;
 
-    // Decrement download count via RPC (even if not currently applied - install count was ours)
-    try {
-      await supabaseFetch('/rpc/decrement_downloads', {
-        method: 'POST',
-        body: JSON.stringify({ crosshair_id_param: id })
-      });
-    } catch (err) {
-      console.error('Decrement RPC failed:', err.message);
-      // Don't bail - still remove locally even if server call failed
-    }
+    // Delete from library = always decrement (they installed once, now uninstalling)
+    await decrementCommunityCount(id);
 
-    // Remove from local installed library
+    // Remove from library
     installed = installed.filter(x => x.id !== id);
     setInstalledCrosshairs(installed);
 
-    // Remove from applied set (legacy tracking)
-    let applied = getAppliedSet();
-    applied = applied.filter(x => x !== id);
-    setAppliedSet(applied);
+    // Remove from applied set
+    const applied = getAppliedSet();
+    setAppliedSet(applied.filter(x => x !== id));
 
-    // If this was the currently-applied community crosshair, reset to factory default
+    // If was currently applied, reset to factory default
     if (wasApplied) {
       const factoryReset = {
-        shape: 'cross',
-        customImage: null,
-        size: 32,
-        thickness: 2,
-        gapSize: 4,
-        color: '#00FF00',
-        opacity: 100,
-        rotation: 0,
-        outline: true,
-        outlineColor: '#000000',
-        outlineThickness: 1,
-        centerDot: true,
-        centerDotSize: 2,
-        centerDotColor: '#FF0000',
-        armTop: 100,
-        armBottom: 100,
-        armLeft: 100,
-        armRight: 100
+        shape: 'cross', customImage: null, size: 32, thickness: 2, gapSize: 4,
+        color: '#00FF00', opacity: 100, rotation: 0,
+        outline: true, outlineColor: '#000000', outlineThickness: 1,
+        centerDot: true, centerDotSize: 2, centerDotColor: '#FF0000',
+        armTop: 100, armBottom: 100, armLeft: 100, armRight: 100
       };
       settings = { ...settings, ...factoryReset };
       delete settings._appliedCommunityId;
@@ -980,10 +904,17 @@ ipcMain.handle('community:applyInstalled', (event, id) => {
   const installed = getInstalledCrosshairs();
   const entry = installed.find(x => x.id === id);
   if (!entry) return { ok: false, error: 'Not found in installed library' };
-  if (store) store.set('lastAppliedCommunityBackup', { ...settings });
+  // Apply without changing count - they already installed it, count was +1 then.
+  // Applying/re-applying from library is a free action.
   settings = { ...settings, ...entry.preset, _appliedCommunityId: id };
   saveSettings();
   broadcastSettings();
+
+  const applied = getAppliedSet();
+  if (!applied.includes(id)) {
+    applied.push(id);
+    setAppliedSet(applied);
+  }
   return { ok: true, settings };
 });
 
@@ -1173,7 +1104,7 @@ ipcMain.handle('gamePreset:install', async (event, id) => {
 
     const installed = getInstalledGamePresets();
     if (installed.find(x => x.id === id)) {
-      return { ok: false, error: 'Already installed. Check Display tab.', alreadyInstalled: true };
+      return { ok: false, error: 'Already installed.', alreadyInstalled: true };
     }
 
     // Increment downloads

@@ -28,7 +28,6 @@ contextBridge.exposeInMainWorld('crosshairAPI', {
   communityGetConfig: () => ipcRenderer.invoke('community:getConfig'),
   communityList: (params) => ipcRenderer.invoke('community:list', params),
   communityUpload: (data) => ipcRenderer.invoke('community:upload', data),
-  communityDownload: (id) => ipcRenderer.invoke('community:download', id),
   communityReport: (id, reason) => ipcRenderer.invoke('community:report', { id, reason }),
 
   // Install/Uninstall system (community crosshairs → user library)
@@ -51,10 +50,6 @@ contextBridge.exposeInMainWorld('crosshairAPI', {
   communityGamePresetListInstalled: () => ipcRenderer.invoke('gamePreset:listInstalled'),
   communityGamePresetApplyInstalled: (id) => ipcRenderer.invoke('gamePreset:applyInstalled', id),
   communityGamePresetReport: (id, reason) => ipcRenderer.invoke('gamePreset:report', { id, reason }),
-
-  // (legacy, kept for back-compat with any cached code)
-  communityUnapply: (id) => ipcRenderer.invoke('community:uninstall', id),
-  communityListApplied: () => ipcRenderer.invoke('community:listInstalled'),
 
   // Game presets & calibration
   applyGamePreset: (key) => ipcRenderer.invoke('app:applyGamePreset', key),

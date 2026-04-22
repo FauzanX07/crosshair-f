@@ -3,6 +3,7 @@
 
 const api = window.crosshairAPI;
 let currentSettings = null;
+let lastAppliedCommunityIdSeen = null;
 let displays = [];
 
 // ============ BUILT-IN PRESET LIBRARY ============
@@ -136,6 +137,16 @@ function applyToUI(s) {
   $('info-color').textContent = s.color.toUpperCase();
 
   renderPreview(s);
+
+  // Only refresh the "Installed from Community" gallery when the APPLIED community id
+  // actually changes — avoids firing an IPC call on every slider drag.
+  const newAppliedId = s._appliedCommunityId || null;
+  if (newAppliedId !== lastAppliedCommunityIdSeen) {
+    lastAppliedCommunityIdSeen = newAppliedId;
+    if (typeof refreshInstalledGallery === 'function') {
+      try { refreshInstalledGallery(); } catch (e) {}
+    }
+  }
 }
 
 // ===== Live preview (uses same logic as overlay) =====
@@ -444,33 +455,8 @@ $('btn-reset').addEventListener('click', async () => {
 
 $('btn-reset-pos').addEventListener('click', () => update({ offsetX: 0, offsetY: 0 }));
 
-// ===== Built-in game preset dropdown =====
-(async function loadGamePresets() {
-  try {
-    const presets = await api.listGamePresets();
-    const sel = document.getElementById('gamePreset');
-    if (!sel || !presets) return;
-    for (const p of presets) {
-      const opt = document.createElement('option');
-      opt.value = p.key;
-      opt.textContent = p.label;
-      sel.appendChild(opt);
-    }
-  } catch (e) { console.error('loadGamePresets failed', e); }
-})();
-
-const btnApplyPreset = document.getElementById('btn-apply-preset');
-if (btnApplyPreset) {
-  btnApplyPreset.addEventListener('click', async () => {
-    const key = document.getElementById('gamePreset').value;
-    if (!key) return alert('Pick a game first.');
-    const r = await api.applyGamePreset(key);
-    if (r.ok) {
-      applyToUI(r.settings);
-      alert(`Applied: ${r.note}`);
-    }
-  });
-}
+// ===== Built-in game preset dropdown REMOVED (replaced with manual calibration guide) =====
+// Kept null-safe in case of stale references; elements no longer exist in HTML.
 
 const btnCalibrate = document.getElementById('btn-calibrate');
 if (btnCalibrate) {
@@ -645,28 +631,36 @@ $('btn-export-png').addEventListener('click', () => {
 
 // ===== Profiles =====
 async function refreshProfiles() {
-  const names = await api.listProfiles();
+  let names = await api.listProfiles();
+  // Ensure "default" is always in the list
+  if (!names) names = [];
+  if (!names.includes('default')) names = ['default', ...names];
+
   const list = $('profile-list');
   list.innerHTML = '';
-  if (!names.length) {
-    list.innerHTML = '<p class="muted">No profiles yet. Save your current setup above.</p>';
-    return;
-  }
+
   for (const name of names) {
-    const isActive = name === currentSettings.activeProfile;
+    const activeName = (currentSettings && currentSettings.activeProfile) || 'default';
+    const isActive = name === activeName;
     const div = document.createElement('div');
     div.className = 'profile-item' + (isActive ? ' active' : '');
     div.innerHTML = `
       <span class="pdot"></span>
-      <span class="pname">${name}</span>
-      <button class="btn ghost" data-act="load">Load</button>
+      <span class="pname">${escapeHtml(name)}</span>
+      <button class="btn ghost" data-act="load">${isActive ? 'Active' : 'Load'}</button>
       <button class="btn danger" data-act="del">${name === 'default' ? 'Locked' : 'Delete'}</button>
     `;
-    div.querySelector('[data-act="load"]').addEventListener('click', async () => {
-      const s = await api.loadProfile(name);
-      applyToUI(s);
-      refreshProfiles();
-    });
+    const loadBtn = div.querySelector('[data-act="load"]');
+    if (isActive) {
+      loadBtn.disabled = true;
+    } else {
+      loadBtn.addEventListener('click', async () => {
+        const s = await api.loadProfile(name);
+        currentSettings = s;
+        applyToUI(s);
+        refreshProfiles();
+      });
+    }
     const delBtn = div.querySelector('[data-act="del"]');
     if (name === 'default') {
       delBtn.disabled = true;
@@ -851,9 +845,9 @@ async function renderCommunityGrid() {
       </div>
       <div class="community-card-actions">
         ${isInstalled
-          ? `<button class="btn ghost" data-act="reapply">✓ Apply</button>`
-          : `<button class="btn" data-act="install">Install</button>`}
-        <button class="btn ghost details" data-act="details">Details</button>
+          ? `<button class="btn ghost" disabled>✓ INSTALLED</button>`
+          : `<button class="btn" data-act="install">INSTALL</button>`}
+        <button class="btn ghost details" data-act="details">DETAILS</button>
       </div>
     `;
 
@@ -874,13 +868,9 @@ async function renderCommunityGrid() {
     popover.querySelector('[data-act="report"]').addEventListener('click', async e => {
       e.stopPropagation();
       popover.classList.remove('open');
-      const reason = prompt('Why are you reporting this crosshair?\n\nOptions: spam, NSFW, copyrighted, offensive, broken, other');
-      if (reason && reason.trim()) {
-        const r = await api.communityReport(item.id, reason.trim());
-        alert(r.ok ? 'Reported. Thanks for helping keep the community safe.' : 'Report failed: ' + r.error);
-      }
+      openReportModalCrosshair(item);
     });
-    // Install button (fresh install)
+    // Install button
     const installBtn = card.querySelector('[data-act="install"]');
     if (installBtn) {
       installBtn.addEventListener('click', async () => {
@@ -889,32 +879,13 @@ async function renderCommunityGrid() {
         const r = await api.communityInstall(item.id);
         if (r.ok) {
           applyToUI(r.settings);
-          alert(`"${item.name}" installed and applied! Find it in the Crosshairs tab under "Installed from Community".`);
+          alert(`"${item.name}" installed and applied! Find it in the Crosshairs tab under "Installed from Community". Click it there to re-apply anytime.`);
           refreshCommunity();
           refreshInstalledGallery();
         } else {
           alert('Install failed: ' + r.error);
           installBtn.disabled = false;
-          installBtn.textContent = 'Install';
-        }
-      });
-    }
-
-    // Re-apply button (already installed, user changed preset and wants to come back)
-    const reapplyBtn = card.querySelector('[data-act="reapply"]');
-    if (reapplyBtn) {
-      reapplyBtn.addEventListener('click', async () => {
-        reapplyBtn.disabled = true;
-        reapplyBtn.textContent = 'Applying...';
-        const r = await api.communityInstall(item.id);
-        if (r.ok) {
-          applyToUI(r.settings);
-          reapplyBtn.disabled = false;
-          reapplyBtn.textContent = '✓ Apply';
-        } else {
-          alert('Could not apply: ' + r.error);
-          reapplyBtn.disabled = false;
-          reapplyBtn.textContent = '✓ Apply';
+          installBtn.textContent = 'INSTALL';
         }
       });
     }
@@ -955,10 +926,12 @@ async function refreshInstalledGallery() {
     container.innerHTML = '<p class="muted" style="grid-column:1/-1;text-align:center;padding:20px;border:1px dashed var(--line)">No community crosshairs installed yet. Browse Community to find and install some!</p>';
     return;
   }
+  const activeId = currentSettings ? currentSettings._appliedCommunityId : null;
   for (const item of list) {
     const card = document.createElement('div');
-    card.className = 'preset-card';
+    card.className = 'preset-card' + (item.id === activeId ? ' active' : '');
     const previewSvg = renderMiniSVG(item.preset || {});
+    const isActive = item.id === activeId;
     card.innerHTML = `
       <div class="card-menu">
         <button class="card-menu-btn" title="More">⋮</button>
@@ -966,6 +939,7 @@ async function refreshInstalledGallery() {
           <button data-act="delete" class="danger">Delete</button>
         </div>
       </div>
+      ${isActive ? '<span class="applied-badge">✓ APPLIED</span>' : ''}
       <div class="preset-thumb">${previewSvg}</div>
       <div class="preset-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
       <div class="preset-cat">BY @${escapeHtml(item.author).toUpperCase()}</div>
@@ -981,22 +955,23 @@ async function refreshInstalledGallery() {
     popover.querySelector('[data-act="delete"]').addEventListener('click', async e => {
       e.stopPropagation();
       popover.classList.remove('open');
-      if (!confirm(`Delete "${item.name}" from your library?\n\nThis also decreases its install count in the community.`)) return;
+      if (!confirm(`Delete "${item.name}" from your library?\n\nThis will decrease its install count in the community.`)) return;
       const r = await api.communityUninstall(item.id);
       if (r.ok) {
         refreshInstalledGallery();
         refreshCommunity();
       } else {
-        alert('Could not uninstall: ' + r.error);
+        alert('Could not delete: ' + r.error);
       }
     });
 
-    // Click card body applies the crosshair
+    // Click card body = apply this crosshair (no count change)
     card.addEventListener('click', async e => {
       if (e.target.closest('.card-menu')) return;
       const r = await api.communityApplyInstalled(item.id);
       if (r.ok) {
         applyToUI(r.settings);
+        refreshInstalledGallery();
       }
     });
 
@@ -1095,26 +1070,26 @@ async function openDetailsModal(crosshair) {
     }
   }
 
-  // Install / Apply button
+  // Install button
   const installBtn = document.getElementById('details-install');
   const isInstalled = installedIds.includes(crosshair.id);
-  installBtn.textContent = isInstalled ? '✓ Apply' : 'Install';
-  installBtn.disabled = false;
+  installBtn.textContent = isInstalled ? '✓ INSTALLED' : 'INSTALL';
+  installBtn.disabled = isInstalled;
   installBtn.onclick = async () => {
-    const originalText = installBtn.textContent;
+    if (isInstalled) return;
     installBtn.disabled = true;
-    installBtn.textContent = isInstalled ? 'Applying...' : 'Installing...';
+    installBtn.textContent = 'Installing...';
     const r = await api.communityInstall(crosshair.id);
     if (r.ok) {
       applyToUI(r.settings);
-      installBtn.textContent = '✓ Apply';
-      installBtn.disabled = false;
+      installBtn.textContent = '✓ INSTALLED';
+      installBtn.disabled = true;
       refreshInstalledGallery();
       refreshCommunity();
     } else {
-      alert((isInstalled ? 'Apply' : 'Install') + ' failed: ' + r.error);
+      alert('Install failed: ' + r.error);
       installBtn.disabled = false;
-      installBtn.textContent = originalText;
+      installBtn.textContent = 'INSTALL';
     }
   };
 
@@ -1190,9 +1165,11 @@ document.getElementById('review-modal').addEventListener('click', e => {
 });
 
 // ===== FILTER CHIPS (All / Installed Only) =====
-document.querySelectorAll('.community-filter-chips .chip').forEach(chip => {
+// Narrow selector to data-view only — avoids clashing with data-gp-view chips
+// that live inside the same .community-filter-chips container on the GP subtab.
+document.querySelectorAll('.community-filter-chips .chip[data-view]').forEach(chip => {
   chip.addEventListener('click', () => {
-    document.querySelectorAll('.community-filter-chips .chip').forEach(c => c.classList.remove('active'));
+    document.querySelectorAll('.community-filter-chips .chip[data-view]').forEach(c => c.classList.remove('active'));
     chip.classList.add('active');
     communityView = chip.dataset.view;
     renderCommunityGrid();
@@ -1398,6 +1375,52 @@ function renderGpGrid(installedIds) {
   }
 }
 
+// Crosshair report modal (prompt() doesn't work in Electron, need a real modal)
+function openReportModalCrosshair(item) {
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal report-modal">
+      <button class="modal-close" id="rpt-close-xh">×</button>
+      <h2>Report Crosshair</h2>
+      <p class="muted">Reporting "${escapeHtml(item.name)}" by @${escapeHtml(item.author)}</p>
+      <p class="muted" style="margin:12px 0 8px">Select a reason:</p>
+      <div class="report-reasons">
+        <button class="chip-btn" data-reason="spam">Spam</button>
+        <button class="chip-btn" data-reason="nsfw">NSFW</button>
+        <button class="chip-btn" data-reason="copyrighted">Copyrighted</button>
+        <button class="chip-btn" data-reason="offensive">Offensive</button>
+        <button class="chip-btn" data-reason="broken">Does not work</button>
+        <button class="chip-btn" data-reason="other">Other</button>
+      </div>
+      <div class="review-actions">
+        <button class="btn ghost" id="rpt-cancel-xh">Cancel</button>
+        <button class="btn" id="rpt-submit-xh" disabled>Submit Report</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(bg);
+  let selectedReason = null;
+  bg.querySelectorAll('.chip-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      bg.querySelectorAll('.chip-btn').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      selectedReason = b.dataset.reason;
+      bg.querySelector('#rpt-submit-xh').disabled = false;
+    });
+  });
+  const close = () => bg.remove();
+  bg.querySelector('#rpt-close-xh').addEventListener('click', close);
+  bg.querySelector('#rpt-cancel-xh').addEventListener('click', close);
+  bg.addEventListener('click', e => { if (e.target === bg) close(); });
+  bg.querySelector('#rpt-submit-xh').addEventListener('click', async () => {
+    if (!selectedReason) return;
+    const r = await api.communityReport(item.id, selectedReason);
+    if (r.ok) { alert('Report submitted. Thanks for helping keep the community safe.'); close(); }
+    else alert('Report failed: ' + r.error);
+  });
+}
+
 // Game preset report modal (simplified, re-uses same style as crosshair report)
 function openReportModalGP(item) {
   const bg = document.createElement('div');
@@ -1580,8 +1603,13 @@ $('btn-community-prev').addEventListener('click', () => { if (communityPage > 0)
 $('btn-community-next').addEventListener('click', () => { communityPage++; refreshCommunity(); });
 // Fix first-click focus issue in Electron
 const searchInput = $('community-search');
-searchInput.addEventListener('click', () => searchInput.focus());
-searchInput.addEventListener('focus', () => searchInput.select());
+searchInput.addEventListener('mousedown', e => {
+  // Ensure focus happens on mousedown (Electron sometimes needs an extra nudge)
+  if (document.activeElement !== searchInput) {
+    e.preventDefault();
+    searchInput.focus();
+  }
+});
 searchInput.addEventListener('input', debounce(() => {
   communityState.search = searchInput.value.trim();
   communityPage = 0;
@@ -1609,27 +1637,36 @@ $('btn-upload-crosshair').addEventListener('click', async () => {
   const game = $('upload-game').value;
   const tags = $('upload-tags').value.trim();
   const description = $('upload-desc').value.trim();
+  if (!currentSettings) return alert('Settings not ready yet, try again in a sec.');
   if (!name || !author) return alert('Name and author tag are required.');
+  if (name.length < 2 || name.length > 40) return alert('Name must be 2-40 characters.');
+  if (author.length > 30) return alert('Author tag too long (max 30 chars).');
   if (currentSettings.shape === 'custom') {
     return alert('Custom image crosshairs cannot be uploaded to the community for safety reasons. Use a built-in shape.');
   }
   const btn = $('btn-upload-crosshair');
   btn.disabled = true;
   btn.textContent = 'Uploading...';
-  const result = await api.communityUpload({
-    name, author, game, tags, description,
-    preset: currentSettings
-  });
-  btn.disabled = false;
-  btn.textContent = 'Upload Current Crosshair';
-  if (result.ok) {
-    alert(result.message);
-    $('upload-name').value = '';
-    $('upload-tags').value = '';
-    $('upload-desc').value = '';
-    refreshCommunity();
-  } else {
-    alert('Upload failed: ' + result.error);
+  try {
+    const result = await api.communityUpload({
+      name, author, game, tags, description,
+      preset: currentSettings
+    });
+    btn.disabled = false;
+    btn.textContent = 'Upload Current Crosshair';
+    if (result.ok) {
+      alert(result.message || 'Uploaded! It will appear after verification.');
+      $('upload-name').value = '';
+      $('upload-tags').value = '';
+      $('upload-desc').value = '';
+      refreshCommunity();
+    } else {
+      alert('Upload failed: ' + result.error);
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Upload Current Crosshair';
+    alert('Upload failed: ' + e.message);
   }
 });
 
@@ -1672,16 +1709,21 @@ function makePresetCard(p, isCustom) {
   card.dataset.id = p.id;
 
   // Mini SVG preview
-  const previewBox = 120;
   const pSettings = { ...p.preset };
-  // Scale preset size to fit preview nicely
   const scale = Math.min(1, 70 / (pSettings.size || 32));
   const miniPreset = { ...pSettings, size: pSettings.size * scale, thickness: (pSettings.thickness || 2) * scale, gapSize: (pSettings.gapSize || 0) * scale, centerDotSize: (pSettings.centerDotSize || 2) * scale };
   const box = 100;
   const svgInner = buildShapeSVG(miniPreset);
 
   card.innerHTML = `
-    ${isCustom ? '<button class="delete-btn" title="Delete">×</button>' : ''}
+    ${isCustom ? `
+      <div class="card-menu">
+        <button class="card-menu-btn" title="More">⋮</button>
+        <div class="card-menu-popover">
+          <button data-act="delete" class="danger">Delete</button>
+        </div>
+      </div>
+    ` : ''}
     <div class="preset-thumb">
       <svg viewBox="${-box/2} ${-box/2} ${box} ${box}" width="100%" height="100%">
         <g transform="rotate(${pSettings.rotation || 0})">${svgInner}</g>
@@ -1692,17 +1734,24 @@ function makePresetCard(p, isCustom) {
   `;
 
   card.addEventListener('click', async e => {
-    if (e.target.classList.contains('delete-btn')) return;
+    if (e.target.closest('.card-menu')) return;
     const s = await api.setSettings(p.preset);
     applyToUI(s);
-    // Highlight
     document.querySelectorAll('.preset-card').forEach(c => c.classList.remove('active'));
     card.classList.add('active');
   });
 
   if (isCustom) {
-    card.querySelector('.delete-btn').addEventListener('click', async e => {
+    const menuBtn = card.querySelector('.card-menu-btn');
+    const popover = card.querySelector('.card-menu-popover');
+    menuBtn.addEventListener('click', e => {
       e.stopPropagation();
+      document.querySelectorAll('.card-menu-popover.open').forEach(p2 => { if (p2 !== popover) p2.classList.remove('open'); });
+      popover.classList.toggle('open');
+    });
+    popover.querySelector('[data-act="delete"]').addEventListener('click', async e => {
+      e.stopPropagation();
+      popover.classList.remove('open');
       if (!confirm(`Delete "${p.name}"?`)) return;
       await api.deleteCustomCrosshair(p.id);
       userCustoms = userCustoms.filter(x => x.id !== p.id);
