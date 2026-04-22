@@ -65,6 +65,12 @@ document.querySelectorAll('.nav-item').forEach(btn => {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.getElementById('tab-' + tab).classList.add('active');
     if (tab === 'profiles') refreshProfiles();
+    // Fix: force a frame render so input elements register as interactive
+    // (Electron inputs sometimes need an explicit redraw after tab reveal)
+    requestAnimationFrame(() => {
+      const activeTab = document.getElementById('tab-' + tab);
+      if (activeTab) activeTab.style.opacity = '1';
+    });
   });
 });
 
@@ -156,10 +162,16 @@ function buildShapeSVG(s) {
       break;
     }
     case 'cross': {
-      const lines = [
-        [0, -gap, 0, -half], [0, gap, 0, half],
-        [-gap, 0, -half, 0], [gap, 0, half, 0]
-      ];
+      const at = (s.armTop === undefined ? 100 : s.armTop) / 100;
+      const ab = (s.armBottom === undefined ? 100 : s.armBottom) / 100;
+      const al = (s.armLeft === undefined ? 100 : s.armLeft) / 100;
+      const ar = (s.armRight === undefined ? 100 : s.armRight) / 100;
+      const armLen = half - gap;
+      const lines = [];
+      if (at > 0) lines.push([0, -gap, 0, -gap - armLen * at]);
+      if (ab > 0) lines.push([0, gap, 0, gap + armLen * ab]);
+      if (al > 0) lines.push([-gap, 0, -gap - armLen * al, 0]);
+      if (ar > 0) lines.push([gap, 0, gap + armLen * ar, 0]);
       if (s.outline) for (const [x1,y1,x2,y2] of lines)
         inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${outline}" stroke-width="${t + ow*2}" />`;
       for (const [x1,y1,x2,y2] of lines)
@@ -167,7 +179,14 @@ function buildShapeSVG(s) {
       break;
     }
     case 't': {
-      const lines = [[0,gap,0,half],[-gap,0,-half,0],[gap,0,half,0]];
+      const ab = (s.armBottom === undefined ? 100 : s.armBottom) / 100;
+      const al = (s.armLeft === undefined ? 100 : s.armLeft) / 100;
+      const ar = (s.armRight === undefined ? 100 : s.armRight) / 100;
+      const armLen = half - gap;
+      const lines = [];
+      if (ab > 0) lines.push([0, gap, 0, gap + armLen * ab]);
+      if (al > 0) lines.push([-gap, 0, -gap - armLen * al, 0]);
+      if (ar > 0) lines.push([gap, 0, gap + armLen * ar, 0]);
       if (s.outline) for (const [x1,y1,x2,y2] of lines)
         inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${outline}" stroke-width="${t + ow*2}" />`;
       for (const [x1,y1,x2,y2] of lines)
@@ -444,8 +463,33 @@ $('btn-reset').addEventListener('click', async () => {
 
 $('btn-reset-pos').addEventListener('click', () => update({ offsetX: 0, offsetY: 0 }));
 
-// Built-in game preset dropdown removed - users now self-calibrate.
-// The reset-to-center functionality is available via btn-reset-pos in Position Offset card.
+// ===== Built-in game preset dropdown =====
+(async function loadGamePresets() {
+  try {
+    const presets = await api.listGamePresets();
+    const sel = document.getElementById('gamePreset');
+    if (!sel || !presets) return;
+    for (const p of presets) {
+      const opt = document.createElement('option');
+      opt.value = p.key;
+      opt.textContent = p.label;
+      sel.appendChild(opt);
+    }
+  } catch (e) { console.error('loadGamePresets failed', e); }
+})();
+
+const btnApplyPreset = document.getElementById('btn-apply-preset');
+if (btnApplyPreset) {
+  btnApplyPreset.addEventListener('click', async () => {
+    const key = document.getElementById('gamePreset').value;
+    if (!key) return alert('Pick a game first.');
+    const r = await api.applyGamePreset(key);
+    if (r.ok) {
+      applyToUI(r.settings);
+      alert(`Applied: ${r.note}`);
+    }
+  });
+}
 
 const btnCalibrate = document.getElementById('btn-calibrate');
 if (btnCalibrate) {
@@ -620,28 +664,32 @@ $('btn-export-png').addEventListener('click', () => {
 
 // ===== Profiles =====
 async function refreshProfiles() {
-  const names = await api.listProfiles();
+  let names = await api.listProfiles();
+  // Ensure "default" is always in the list
+  if (!names.includes('default')) names = ['default', ...names];
   const list = $('profile-list');
   list.innerHTML = '';
-  if (!names.length) {
-    list.innerHTML = '<p class="muted">No profiles yet. Save your current setup above.</p>';
-    return;
-  }
   for (const name of names) {
-    const isActive = name === currentSettings.activeProfile;
+    const isActive = name === (currentSettings && currentSettings.activeProfile);
     const div = document.createElement('div');
     div.className = 'profile-item' + (isActive ? ' active' : '');
     div.innerHTML = `
       <span class="pdot"></span>
-      <span class="pname">${name}</span>
-      <button class="btn ghost" data-act="load">Load</button>
+      <span class="pname">${escapeHtml(name)}</span>
+      <button class="btn ghost" data-act="load">${isActive ? 'Active' : 'Load'}</button>
       <button class="btn danger" data-act="del">${name === 'default' ? 'Locked' : 'Delete'}</button>
     `;
-    div.querySelector('[data-act="load"]').addEventListener('click', async () => {
-      const s = await api.loadProfile(name);
-      applyToUI(s);
-      refreshProfiles();
-    });
+    const loadBtn = div.querySelector('[data-act="load"]');
+    if (isActive) {
+      loadBtn.disabled = true;
+    } else {
+      loadBtn.addEventListener('click', async () => {
+        const s = await api.loadProfile(name);
+        currentSettings = s;
+        applyToUI(s);
+        refreshProfiles();
+      });
+    }
     const delBtn = div.querySelector('[data-act="del"]');
     if (name === 'default') {
       delBtn.disabled = true;
@@ -846,10 +894,14 @@ async function renderCommunityGrid() {
       popover.classList.remove('open');
       openReviewModal(item);
     });
-    popover.querySelector('[data-act="report"]').addEventListener('click', e => {
+    popover.querySelector('[data-act="report"]').addEventListener('click', async e => {
       e.stopPropagation();
       popover.classList.remove('open');
-      openReportModal(item);
+      const reason = prompt('Why are you reporting this crosshair?\n\nOptions: spam, NSFW, copyrighted, offensive, broken, other');
+      if (reason && reason.trim()) {
+        const r = await api.communityReport(item.id, reason.trim());
+        alert(r.ok ? 'Reported. Thanks for helping keep the community safe.' : 'Report failed: ' + r.error);
+      }
     });
     // Install button
     const installBtn = card.querySelector('[data-act="install"]');
@@ -1180,10 +1232,18 @@ function renderMiniSVG(preset) {
 $('btn-community-refresh').addEventListener('click', () => { communityPage = 0; refreshCommunity(); });
 $('btn-community-prev').addEventListener('click', () => { if (communityPage > 0) { communityPage--; refreshCommunity(); } });
 $('btn-community-next').addEventListener('click', () => { communityPage++; refreshCommunity(); });
-// Fix first-click focus issue in Electron
+
+// Fix Electron input first-click focus bug (tab visibility transition issue)
 const searchInput = $('community-search');
-searchInput.addEventListener('click', () => searchInput.focus());
-searchInput.addEventListener('focus', () => searchInput.select());
+// On pointerdown (fires before click), force focus synchronously
+searchInput.addEventListener('pointerdown', (e) => {
+  e.stopPropagation();
+  searchInput.focus();
+});
+searchInput.addEventListener('mousedown', (e) => {
+  // Belt-and-suspenders - also focus on mousedown
+  setTimeout(() => searchInput.focus(), 0);
+});
 searchInput.addEventListener('input', debounce(() => {
   communityState.search = searchInput.value.trim();
   communityPage = 0;
@@ -1274,16 +1334,21 @@ function makePresetCard(p, isCustom) {
   card.dataset.id = p.id;
 
   // Mini SVG preview
-  const previewBox = 120;
   const pSettings = { ...p.preset };
-  // Scale preset size to fit preview nicely
   const scale = Math.min(1, 70 / (pSettings.size || 32));
   const miniPreset = { ...pSettings, size: pSettings.size * scale, thickness: (pSettings.thickness || 2) * scale, gapSize: (pSettings.gapSize || 0) * scale, centerDotSize: (pSettings.centerDotSize || 2) * scale };
   const box = 100;
   const svgInner = buildShapeSVG(miniPreset);
 
   card.innerHTML = `
-    ${isCustom ? '<button class="delete-btn" title="Delete">×</button>' : ''}
+    ${isCustom ? `
+      <div class="card-menu">
+        <button class="card-menu-btn" title="More">⋮</button>
+        <div class="card-menu-popover">
+          <button data-act="delete" class="danger">Delete</button>
+        </div>
+      </div>
+    ` : ''}
     <div class="preset-thumb">
       <svg viewBox="${-box/2} ${-box/2} ${box} ${box}" width="100%" height="100%">
         <g transform="rotate(${pSettings.rotation || 0})">${svgInner}</g>
@@ -1294,17 +1359,24 @@ function makePresetCard(p, isCustom) {
   `;
 
   card.addEventListener('click', async e => {
-    if (e.target.classList.contains('delete-btn')) return;
+    if (e.target.closest('.card-menu')) return;
     const s = await api.setSettings(p.preset);
     applyToUI(s);
-    // Highlight
     document.querySelectorAll('.preset-card').forEach(c => c.classList.remove('active'));
     card.classList.add('active');
   });
 
   if (isCustom) {
-    card.querySelector('.delete-btn').addEventListener('click', async e => {
+    const menuBtn = card.querySelector('.card-menu-btn');
+    const popover = card.querySelector('.card-menu-popover');
+    menuBtn.addEventListener('click', e => {
       e.stopPropagation();
+      document.querySelectorAll('.card-menu-popover.open').forEach(p2 => { if (p2 !== popover) p2.classList.remove('open'); });
+      popover.classList.toggle('open');
+    });
+    popover.querySelector('[data-act="delete"]').addEventListener('click', async e => {
+      e.stopPropagation();
+      popover.classList.remove('open');
       if (!confirm(`Delete "${p.name}"?`)) return;
       await api.deleteCustomCrosshair(p.id);
       userCustoms = userCustoms.filter(x => x.id !== p.id);
@@ -1354,14 +1426,19 @@ let designerState = {
   outlineThickness: 1,
   centerDot: true,
   centerDotSize: 2,
-  centerDotColor: '#FF0000'
+  centerDotColor: '#FF0000',
+  armTop: 100,
+  armBottom: 100,
+  armLeft: 100,
+  armRight: 100
 };
 
 function resetDesigner() {
   designerState = {
     shape: 'cross', size: 24, thickness: 2, gapSize: 3, rotation: 0, opacity: 100,
     color: '#00FF00', outline: true, outlineColor: '#000000', outlineThickness: 1,
-    centerDot: true, centerDotSize: 2, centerDotColor: '#FF0000'
+    centerDot: true, centerDotSize: 2, centerDotColor: '#FF0000',
+    armTop: 100, armBottom: 100, armLeft: 100, armRight: 100
   };
   syncDesignerUI();
 }
@@ -1381,6 +1458,20 @@ function syncDesignerUI() {
   $('d-centerDot').checked = s.centerDot;
   $('d-centerDotSize').value = s.centerDotSize; $('dval-centerDotSize').textContent = s.centerDotSize;
   $('d-centerDotColor').value = s.centerDotColor; $('d-centerDotColorHex').value = s.centerDotColor.toUpperCase();
+  // Per-arm sliders
+  if ($('d-armTop')) {
+    $('d-armTop').value = s.armTop; $('dval-armTop').textContent = s.armTop;
+    $('d-armBottom').value = s.armBottom; $('dval-armBottom').textContent = s.armBottom;
+    $('d-armLeft').value = s.armLeft; $('dval-armLeft').textContent = s.armLeft;
+    $('d-armRight').value = s.armRight; $('dval-armRight').textContent = s.armRight;
+  }
+  // Show per-arm card only for shapes that support it
+  const perArmCard = $('per-arm-card');
+  if (perArmCard) {
+    const supports = ['cross', 't', 'hybrid'].includes(s.shape);
+    perArmCard.style.opacity = supports ? '1' : '0.4';
+    perArmCard.style.pointerEvents = supports ? 'auto' : 'none';
+  }
   document.querySelectorAll('.base-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.shape === s.shape);
   });
@@ -1528,6 +1619,28 @@ function wireDesigner() {
     renderWorkshop(); validateDesign();
   });
 
+  // Per-arm length sliders
+  ['armTop', 'armBottom', 'armLeft', 'armRight'].forEach(arm => {
+    const el = $('d-' + arm);
+    if (!el) return;
+    el.addEventListener('input', e => {
+      const v = parseInt(e.target.value);
+      designerState[arm] = v;
+      $('dval-' + arm).textContent = v;
+      renderWorkshop(); validateDesign();
+    });
+  });
+  const btnResetArms = $('btn-reset-arms');
+  if (btnResetArms) {
+    btnResetArms.addEventListener('click', () => {
+      designerState.armTop = 100;
+      designerState.armBottom = 100;
+      designerState.armLeft = 100;
+      designerState.armRight = 100;
+      syncDesignerUI();
+    });
+  }
+
   $('btn-reset-design').addEventListener('click', resetDesigner);
   $('btn-finish-design').addEventListener('click', async () => {
     if (!validateDesign()) {
@@ -1598,63 +1711,3 @@ document.querySelector('[data-tab="designer"]').addEventListener('click', () => 
 // Init presets on page load
 renderPresetGallery();
 loadUserCustoms();
-// ===== REPORT MODAL =====
-function openReportModal(crosshair) {
-  const bg = document.createElement('div');
-  bg.className = 'modal-bg';
-  bg.innerHTML = `
-    <div class="modal report-modal">
-      <button class="modal-close" id="rpt-close">×</button>
-      <h2>Report Crosshair</h2>
-      <p class="muted">Reporting "${escapeHtml(crosshair.name)}" by @${escapeHtml(crosshair.author)}</p>
-      <p class="muted" style="margin:12px 0 8px">Select a reason:</p>
-      <div class="report-reasons">
-        <button class="chip-btn" data-reason="spam">Spam</button>
-        <button class="chip-btn" data-reason="nsfw">NSFW / Inappropriate</button>
-        <button class="chip-btn" data-reason="copyright">Copyrighted</button>
-        <button class="chip-btn" data-reason="offensive">Offensive</button>
-        <button class="chip-btn" data-reason="broken">Broken / Does not work</button>
-        <button class="chip-btn" data-reason="other">Other</button>
-      </div>
-      <textarea id="rpt-details" placeholder="Optional: add more details (max 200 chars)" maxlength="200"></textarea>
-      <div class="review-actions">
-        <button class="btn ghost" id="rpt-cancel">Cancel</button>
-        <button class="btn" id="rpt-submit" disabled>Submit Report</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(bg);
-
-  let selectedReason = null;
-  bg.querySelectorAll('.chip-btn').forEach(b => {
-    b.addEventListener('click', () => {
-      bg.querySelectorAll('.chip-btn').forEach(x => x.classList.remove('active'));
-      b.classList.add('active');
-      selectedReason = b.dataset.reason;
-      bg.querySelector('#rpt-submit').disabled = false;
-    });
-  });
-
-  const close = () => bg.remove();
-  bg.querySelector('#rpt-close').addEventListener('click', close);
-  bg.querySelector('#rpt-cancel').addEventListener('click', close);
-  bg.addEventListener('click', e => { if (e.target === bg) close(); });
-
-  bg.querySelector('#rpt-submit').addEventListener('click', async () => {
-    if (!selectedReason) return;
-    const details = bg.querySelector('#rpt-details').value.trim();
-    const reason = details ? `${selectedReason}: ${details}` : selectedReason;
-    const btn = bg.querySelector('#rpt-submit');
-    btn.disabled = true;
-    btn.textContent = 'Submitting...';
-    const r = await api.communityReport(crosshair.id, reason);
-    if (r.ok) {
-      alert('Report submitted. Thanks for helping keep the community safe.');
-      close();
-    } else {
-      alert('Could not submit report: ' + r.error);
-      btn.disabled = false;
-      btn.textContent = 'Submit Report';
-    }
-  });
-}

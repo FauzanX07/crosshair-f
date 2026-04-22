@@ -245,6 +245,24 @@ function resetPosition() {
 }
 
 function loadProfile(name) {
+  if (name === 'default') {
+    // "Default" means reset to factory defaults
+    const preserved = {
+      profiles: settings.profiles,
+      monitorIndex: settings.monitorIndex,
+      hotkeyToggle: settings.hotkeyToggle,
+      hotkeyHide: settings.hotkeyHide,
+      hotkeyReset: settings.hotkeyReset,
+      startWithWindows: settings.startWithWindows,
+      startMinimized: settings.startMinimized,
+      hideOnCapture: settings.hideOnCapture
+    };
+    settings = { ...defaultSettings, ...preserved, activeProfile: 'default' };
+    saveSettings();
+    broadcastSettings();
+    rebuildTrayMenu();
+    return;
+  }
   const p = (settings.profiles || {})[name];
   if (!p) return;
   settings = { ...settings, ...p, activeProfile: name, profiles: settings.profiles };
@@ -549,7 +567,8 @@ function validateCustomPreset(preset) {
   const ranges = {
     size: [4, 200], thickness: [0.5, 20], gapSize: [0, 60],
     rotation: [0, 359], opacity: [10, 100],
-    outlineThickness: [0.5, 6], centerDotSize: [0.5, 20]
+    outlineThickness: [0.5, 6], centerDotSize: [0.5, 20],
+    armTop: [0, 200], armBottom: [0, 200], armLeft: [0, 200], armRight: [0, 200]
   };
   for (const [k, [min, max]] of Object.entries(ranges)) {
     if (preset[k] !== undefined) {
@@ -630,7 +649,8 @@ async function supabaseFetch(urlPath, options = {}) {
 
 function sanitizeCommunityPreset(preset) {
   const allowed = ['shape','size','thickness','gapSize','color','opacity','rotation',
-                   'outline','outlineColor','outlineThickness','centerDot','centerDotSize','centerDotColor'];
+                   'outline','outlineColor','outlineThickness','centerDot','centerDotSize','centerDotColor',
+                   'armTop','armBottom','armLeft','armRight'];
   const allowedShapes = ['cross','dot','t','circle','hybrid','scope','sniper',
                          'x','corners','brackets','chevron','diamond','triangle','star',
                          'ksight','prong3','prong6','double_ring','hollow_cross','plus_dot'];
@@ -643,7 +663,8 @@ function sanitizeCommunityPreset(preset) {
   const ranges = {
     size: [4, 200], thickness: [0.5, 20], gapSize: [0, 60],
     opacity: [10, 100], rotation: [0, 359],
-    outlineThickness: [0.5, 6], centerDotSize: [0.5, 20]
+    outlineThickness: [0.5, 6], centerDotSize: [0.5, 20],
+    armTop: [0, 200], armBottom: [0, 200], armLeft: [0, 200], armRight: [0, 200]
   };
   for (const [k, [min, max]] of Object.entries(ranges)) {
     if (out[k] !== undefined) {
@@ -897,31 +918,16 @@ ipcMain.handle('community:uninstall', async (event, id) => {
     applied = applied.filter(x => x !== id);
     setAppliedSet(applied);
 
-    // If this was the currently-applied community crosshair, reset crosshair to default
-    // (the classic green cross + red center dot)
+    // If this was the currently-applied community crosshair, restore backup
     if (settings._appliedCommunityId === id) {
-      const defaultCrosshair = {
-        shape: 'cross',
-        customImage: null,
-        size: 32,
-        thickness: 2,
-        gapSize: 4,
-        color: '#00FF00',
-        opacity: 100,
-        rotation: 0,
-        outline: true,
-        outlineColor: '#000000',
-        outlineThickness: 1,
-        centerDot: true,
-        centerDotSize: 2,
-        centerDotColor: '#FF0000'
-      };
-      settings = { ...settings, ...defaultCrosshair };
-      delete settings._appliedCommunityId;
-      saveSettings();
-      broadcastSettings();
+      const backup = store ? store.get('lastAppliedCommunityBackup') : null;
+      if (backup) {
+        settings = { ...backup };
+        delete settings._appliedCommunityId;
+        saveSettings();
+        broadcastSettings();
+      }
     }
-
     return { ok: true, installed };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -1069,55 +1075,8 @@ Click "I Understand & Accept" to continue, or "Exit" to quit.`,
   return true;
 }
 
-// ========== CLEANUP MODE (called by uninstaller) ==========
-async function runCleanupMode() {
-  try {
-    const Store = (await import('electron-store')).default;
-    const tempStore = new Store({ name: 'crosshair-f-config' });
-    const installed = tempStore.get('installedCrosshairs') || [];
-    const savedCfg = tempStore.get('community') || {};
-    const endpoint = (savedCfg.endpoint || DEFAULT_COMMUNITY_CONFIG.endpoint).replace(/\/$/, '');
-    const apiKey = savedCfg.apiKey || DEFAULT_COMMUNITY_CONFIG.apiKey;
-
-    console.log(`[Cleanup] Decrementing ${installed.length} install counts...`);
-
-    // Decrement each install count in parallel with 3s timeout per call
-    const promises = installed.map(item => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 3000);
-      return fetch(`${endpoint}/rest/v1/rpc/decrement_downloads`, {
-        method: 'POST',
-        signal: controller.signal,
-        headers: {
-          'apikey': apiKey,
-          'Authorization': 'Bearer ' + apiKey,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ crosshair_id_param: item.id })
-      }).catch(() => null).finally(() => clearTimeout(timer));
-    });
-
-    await Promise.all(promises);
-
-    // Clear local lists so if user reinstalls, they start fresh
-    tempStore.set('installedCrosshairs', []);
-    tempStore.set('appliedCommunityIds', []);
-
-    console.log('[Cleanup] Done.');
-  } catch (e) {
-    console.error('[Cleanup] Failed:', e.message);
-  }
-  app.quit();
-}
-
 // App lifecycle
 app.whenReady().then(async () => {
-  // CLEANUP MODE - called by the uninstaller before deleting files
-  if (isCleanupMode) {
-    await runCleanupMode();
-    return;
-  }
-
   await loadStore();
   const accepted = await showFirstLaunchDisclaimer();
   if (!accepted) return;
