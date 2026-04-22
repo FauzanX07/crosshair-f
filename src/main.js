@@ -259,26 +259,46 @@ function createSettings() {
   settingsWindow.setMenuBarVisibility(false);
   settingsWindow.loadFile(path.join(__dirname, 'settings.html'));
 
+  // Helper: drop overlay below settings, bring it back when settings hides/blurs
+  const lowerOverlay = () => {
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      // Fully drop always-on-top so settings window (modals, stars) render above the crosshair
+      overlayWindow.setAlwaysOnTop(false);
+    }
+  };
+  const raiseOverlay = () => {
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+    }
+  };
+
   // Fix first-click-after-focus bug: when window regains focus (alt-tab back,
   // taskbar click, tray restore), hover/click state in Chromium can go stale
   // until mouse moves. Force a renderer notification so JS can reflow listeners.
   settingsWindow.on('focus', () => {
     if (settingsWindow && !settingsWindow.isDestroyed()) {
-      // Force input reset + tell renderer to re-wire hover handlers
+      lowerOverlay();
       settingsWindow.webContents.send('window:focused');
     }
   });
   settingsWindow.on('show', () => {
     if (settingsWindow && !settingsWindow.isDestroyed()) {
+      lowerOverlay();
       settingsWindow.webContents.send('window:focused');
     }
   });
   settingsWindow.on('restore', () => {
     if (settingsWindow && !settingsWindow.isDestroyed()) {
+      lowerOverlay();
       settingsWindow.focus();
       settingsWindow.webContents.send('window:focused');
     }
   });
+  // When settings window is blurred/hidden/minimized, bring crosshair back on top for gaming
+  settingsWindow.on('blur', raiseOverlay);
+  settingsWindow.on('hide', raiseOverlay);
+  settingsWindow.on('minimize', raiseOverlay);
+  settingsWindow.on('close', raiseOverlay);
 
   settingsWindow.webContents.on('did-finish-load', () => {
     const displays = screen.getAllDisplays().map((d, i) => ({
@@ -1843,6 +1863,8 @@ async function runCleanupMode() {
   } catch (e) {
     console.error('[Cleanup] Failed:', e.message);
   }
+  // Fast exit - uninstaller is waiting for this process to die
+  setTimeout(() => process.exit(0), 100);
   app.quit();
 }
 

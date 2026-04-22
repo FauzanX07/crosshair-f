@@ -67,6 +67,9 @@ document.querySelectorAll('.nav-item').forEach(btn => {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.getElementById('tab-' + tab).classList.add('active');
     if (tab === 'profiles') refreshProfiles();
+    if (tab === 'gamepositions' && typeof refreshInstalledGpGallery === 'function') {
+      refreshInstalledGpGallery();
+    }
   });
 });
 
@@ -770,34 +773,56 @@ api.onSettingsUpdate(s => applyToUI(s));
 // click. Force a DOM reflow + dispatch a synthetic mouse event to wake it up.
 if (api.onWindowFocused) {
   api.onWindowFocused(() => {
-    // Brief class toggle forces layout recalculation — unsticks stale hover state
-    document.body.classList.add('window-refocusing');
-    // Force reflow (reading offsetHeight is a synchronous layout trigger)
-    void document.body.offsetHeight;
-    requestAnimationFrame(() => {
-      document.body.classList.remove('window-refocusing');
-      // Dispatch a synthetic mousemove at current mouse pos (0,0 works too)
-      // so :hover pseudo-class gets re-evaluated on whatever is under cursor
-      try {
-        const ev = new MouseEvent('mousemove', {
-          bubbles: true, cancelable: true, view: window,
-          clientX: 0, clientY: 0
-        });
-        document.dispatchEvent(ev);
-      } catch (e) {}
-    });
+    handleWindowRefocus();
   });
 }
 
 // Also listen for window focus events directly as a backup
 window.addEventListener('focus', () => {
-  // Same reflow trick
-  document.body.classList.add('window-refocusing');
-  void document.body.offsetHeight;
-  requestAnimationFrame(() => {
-    document.body.classList.remove('window-refocusing');
-  });
+  handleWindowRefocus();
 });
+
+// Core refocus handler — defeats the Chromium first-click-after-focus bug on
+// inputs, buttons, and cards. The trick: temporarily blur/focus body, then
+// dispatch a synthetic pointer event to re-prime the hit-test layer.
+function handleWindowRefocus() {
+  try {
+    // Force style recalculation
+    document.body.classList.add('window-refocusing');
+    void document.body.offsetHeight;
+    requestAnimationFrame(() => {
+      document.body.classList.remove('window-refocusing');
+      // Sync pointer state — this unsticks focus on inputs
+      try {
+        document.body.focus();
+        if (document.activeElement === document.body) document.body.blur();
+      } catch (e) {}
+      // Re-prime hit test
+      try {
+        document.dispatchEvent(new MouseEvent('mousemove', {
+          bubbles: true, cancelable: true, view: window, clientX: 1, clientY: 1
+        }));
+      } catch (e) {}
+    });
+  } catch (e) {}
+}
+
+// Capture-phase click handler on ALL inputs — if the first click lands on
+// an input but focus didn't transfer, force it to focus on the next tick.
+// This is bulletproof because it runs before any other handler.
+document.addEventListener('pointerdown', (e) => {
+  const t = e.target;
+  if (!t) return;
+  const tag = t.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+    if (document.activeElement !== t) {
+      // Force focus on next tick so browser's native focus flow doesn't clobber it
+      setTimeout(() => {
+        try { t.focus(); } catch (err) {}
+      }, 0);
+    }
+  }
+}, true);
 
 // Initial load fallback if onInit did not arrive yet
 api.getSettings().then(s => {
@@ -1388,7 +1413,7 @@ function renderGpGrid(installedIds) {
       </div>
       <div class="community-card-actions">
         ${isInstalled
-          ? `<button class="btn ghost" data-act="uninstall">✓ INSTALLED</button>`
+          ? `<button class="btn ghost" disabled>✓ INSTALLED</button>`
           : `<button class="btn" data-act="install">${isMatching ? 'INSTALL' : 'INSTALL ANYWAY'}</button>`}
         <button class="btn ghost details" data-act="details">DETAILS</button>
       </div>
@@ -1413,7 +1438,7 @@ function renderGpGrid(installedIds) {
       openReportModalGP(item);
     });
 
-    // Install button
+    // Install button (only if not installed — uninstall is in Display tab)
     const installBtn = card.querySelector('[data-act="install"]');
     if (installBtn) {
       installBtn.addEventListener('click', async () => {
@@ -1423,28 +1448,13 @@ function renderGpGrid(installedIds) {
         if (r.ok) {
           applyToUI(r.settings);
           updateGpUploadCurrent();
-          alert(`"${item.name}" installed! Offset applied: X: ${r.entry.offset_x}, Y: ${r.entry.offset_y}.`);
+          alert(`"${item.name}" installed! Offset applied: X: ${r.entry.offset_x}, Y: ${r.entry.offset_y}. To uninstall, go to Display tab → Installed from Community.`);
           refreshGpGrid();
           refreshInstalledGpGallery();
         } else {
           alert('Install failed: ' + r.error);
           installBtn.disabled = false;
           installBtn.textContent = isMatching ? 'INSTALL' : 'INSTALL ANYWAY';
-        }
-      });
-    }
-
-    // Uninstall button (from community tab)
-    const uninstallBtn = card.querySelector('[data-act="uninstall"]');
-    if (uninstallBtn) {
-      uninstallBtn.addEventListener('click', async () => {
-        if (!confirm(`Remove "${item.name}" from your installed presets?\n\nThis also decreases its install count.`)) return;
-        const r = await api.communityGamePresetUninstall(item.id);
-        if (r.ok) {
-          refreshGpGrid();
-          refreshInstalledGpGallery();
-        } else {
-          alert('Uninstall failed: ' + r.error);
         }
       });
     }
@@ -1833,7 +1843,6 @@ refreshInstalledGpGallery();
 // Wire up GP toolbar
 const gpSearch = document.getElementById('gp-search');
 if (gpSearch) {
-  gpSearch.addEventListener('pointerdown', e => { e.stopPropagation(); gpSearch.focus(); });
   gpSearch.addEventListener('input', debounce(() => {
     gpState.search = gpSearch.value.trim();
     refreshGpGrid();
@@ -1965,15 +1974,9 @@ function renderMiniSVG(preset) {
 $('btn-community-refresh').addEventListener('click', () => { communityPage = 0; refreshCommunity(); });
 $('btn-community-prev').addEventListener('click', () => { if (communityPage > 0) { communityPage--; refreshCommunity(); } });
 $('btn-community-next').addEventListener('click', () => { communityPage++; refreshCommunity(); });
-// Fix first-click focus issue in Electron
+// Search input — works naturally, no preventDefault which was swallowing focus.
+// The window-focus handler above already handles the Chromium hover/click state.
 const searchInput = $('community-search');
-searchInput.addEventListener('mousedown', e => {
-  // Ensure focus happens on mousedown (Electron sometimes needs an extra nudge)
-  if (document.activeElement !== searchInput) {
-    e.preventDefault();
-    searchInput.focus();
-  }
-});
 searchInput.addEventListener('input', debounce(() => {
   communityState.search = searchInput.value.trim();
   communityPage = 0;
