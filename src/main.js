@@ -1878,6 +1878,18 @@ async function runCleanupMode() {
 
     // Clear lists so reinstall starts fresh (only if user is truly uninstalling
     // - but this runs regardless because the next step is file deletion anyway)
+    // Reset offset to default (0,0) since all installed presets are being removed.
+    // This way if user reinstalls later, crosshair starts at center not at some
+    // ghost offset from a preset that no longer exists.
+    const currentSettings = tempStore.get('settings') || {};
+    currentSettings.offsetX = 0;
+    currentSettings.offsetY = 0;
+    tempStore.set('settings', currentSettings);
+
+    // Clear lists so reinstall starts fresh
+    tempStore.set('installedCrosshairs', []);
+    tempStore.set('installedGamePresets', []);
+    tempStore.set('appliedCommunityIds', []);
     tempStore.set('installedCrosshairs', []);
     tempStore.set('installedGamePresets', []);
     tempStore.set('appliedCommunityIds', []);
