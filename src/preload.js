@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('crosshairAPI', {
   // Events from main
   onSettingsUpdate: (cb) => ipcRenderer.on('settings:update', (e, s) => cb(s)),
   onInit: (cb) => ipcRenderer.on('init', (e, data) => cb(data)),
+  onWindowFocused: (cb) => ipcRenderer.on('window:focused', () => cb()),
 
   // Community
   communityConfig: (cfg) => ipcRenderer.invoke('community:config', cfg),
@@ -50,6 +51,11 @@ contextBridge.exposeInMainWorld('crosshairAPI', {
   communityGamePresetListInstalled: () => ipcRenderer.invoke('gamePreset:listInstalled'),
   communityGamePresetApplyInstalled: (id) => ipcRenderer.invoke('gamePreset:applyInstalled', id),
   communityGamePresetReport: (id, reason) => ipcRenderer.invoke('gamePreset:report', { id, reason }),
+
+  // Game Preset Reviews & Ratings (mirrors crosshair reviews)
+  communityGamePresetSubmitReview: (data) => ipcRenderer.invoke('gamePreset:submitReview', data),
+  communityGamePresetGetReviews: (id) => ipcRenderer.invoke('gamePreset:getReviews', id),
+  communityGamePresetGetDetails: (id) => ipcRenderer.invoke('gamePreset:getDetails', id),
 
   // Game presets & calibration
   applyGamePreset: (key) => ipcRenderer.invoke('app:applyGamePreset', key),

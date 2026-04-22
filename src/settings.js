@@ -4,6 +4,7 @@
 const api = window.crosshairAPI;
 let currentSettings = null;
 let lastAppliedCommunityIdSeen = null;
+let lastOffsetSigSeen = null;
 let displays = [];
 
 // ============ BUILT-IN PRESET LIBRARY ============
@@ -145,6 +146,16 @@ function applyToUI(s) {
     lastAppliedCommunityIdSeen = newAppliedId;
     if (typeof refreshInstalledGallery === 'function') {
       try { refreshInstalledGallery(); } catch (e) {}
+    }
+  }
+
+  // Same deal for the installed game-preset gallery — only refresh when offset changes
+  // (not every time a slider changes a color/size/etc)
+  const offsetSig = (s.offsetX || 0) + ',' + (s.offsetY || 0);
+  if (offsetSig !== lastOffsetSigSeen) {
+    lastOffsetSigSeen = offsetSig;
+    if (typeof refreshInstalledGpGallery === 'function') {
+      try { refreshInstalledGpGallery(); } catch (e) {}
     }
   }
 }
@@ -753,6 +764,41 @@ api.onInit(({ settings, displays: dlist }) => {
 
 api.onSettingsUpdate(s => applyToUI(s));
 
+// ===== FIX: first-click-after-focus bug =====
+// When this window loses then regains focus (alt-tab, taskbar click), Chromium
+// sometimes doesn't re-enable :hover and click events fire only after the second
+// click. Force a DOM reflow + dispatch a synthetic mouse event to wake it up.
+if (api.onWindowFocused) {
+  api.onWindowFocused(() => {
+    // Brief class toggle forces layout recalculation — unsticks stale hover state
+    document.body.classList.add('window-refocusing');
+    // Force reflow (reading offsetHeight is a synchronous layout trigger)
+    void document.body.offsetHeight;
+    requestAnimationFrame(() => {
+      document.body.classList.remove('window-refocusing');
+      // Dispatch a synthetic mousemove at current mouse pos (0,0 works too)
+      // so :hover pseudo-class gets re-evaluated on whatever is under cursor
+      try {
+        const ev = new MouseEvent('mousemove', {
+          bubbles: true, cancelable: true, view: window,
+          clientX: 0, clientY: 0
+        });
+        document.dispatchEvent(ev);
+      } catch (e) {}
+    });
+  });
+}
+
+// Also listen for window focus events directly as a backup
+window.addEventListener('focus', () => {
+  // Same reflow trick
+  document.body.classList.add('window-refocusing');
+  void document.body.offsetHeight;
+  requestAnimationFrame(() => {
+    document.body.classList.remove('window-refocusing');
+  });
+});
+
 // Initial load fallback if onInit did not arrive yet
 api.getSettings().then(s => {
   if (!currentSettings) applyToUI(s);
@@ -1305,6 +1351,8 @@ function renderGpGrid(installedIds) {
     card.className = 'gp-card';
     const isInstalled = installedIds.includes(item.id);
     const isMatching = item.resolution === userResolution;
+    const avgRating = parseFloat(item.rating) || 0;
+    const starsHTML = renderStars(avgRating);
 
     const modeLabel = {
       fullscreen_exclusive: 'FS Exclusive',
@@ -1319,6 +1367,7 @@ function renderGpGrid(installedIds) {
       <div class="card-menu">
         <button class="card-menu-btn" title="More">⋮</button>
         <div class="card-menu-popover">
+          <button data-act="review">Rate &amp; Review</button>
           <button data-act="report" class="danger">Report</button>
         </div>
       </div>
@@ -1329,12 +1378,19 @@ function renderGpGrid(installedIds) {
         <span>${escapeHtml(modeLabel)}</span>
       </div>
       <div class="gp-offset">X: ${item.offset_x >= 0 ? '+' : ''}${item.offset_x}, Y: ${item.offset_y >= 0 ? '+' : ''}${item.offset_y}</div>
+      <div class="community-rating">
+        <span class="stars-display">${starsHTML}</span>
+        <span>${avgRating > 0 ? avgRating.toFixed(1) : 'No ratings'}</span>
+      </div>
       ${item.description ? `<div class="gp-desc">${escapeHtml(item.description)}</div>` : ''}
       <div class="gp-footer">
         <span class="muted">↓ ${item.downloads || 0}</span>
+      </div>
+      <div class="community-card-actions">
         ${isInstalled
-          ? `<button class="btn ghost" data-act="uninstall">✓ Installed</button>`
-          : `<button class="btn" data-act="install">${isMatching ? 'Install' : 'Install anyway'}</button>`}
+          ? `<button class="btn ghost" data-act="uninstall">✓ INSTALLED</button>`
+          : `<button class="btn" data-act="install">${isMatching ? 'INSTALL' : 'INSTALL ANYWAY'}</button>`}
+        <button class="btn ghost details" data-act="details">DETAILS</button>
       </div>
     `;
 
@@ -1345,6 +1401,11 @@ function renderGpGrid(installedIds) {
       e.stopPropagation();
       document.querySelectorAll('.card-menu-popover.open').forEach(p => { if (p !== popover) p.classList.remove('open'); });
       popover.classList.toggle('open');
+    });
+    popover.querySelector('[data-act="review"]').addEventListener('click', e => {
+      e.stopPropagation();
+      popover.classList.remove('open');
+      openGpReviewModal(item);
     });
     popover.querySelector('[data-act="report"]').addEventListener('click', async e => {
       e.stopPropagation();
@@ -1364,16 +1425,16 @@ function renderGpGrid(installedIds) {
           updateGpUploadCurrent();
           alert(`"${item.name}" installed! Offset applied: X: ${r.entry.offset_x}, Y: ${r.entry.offset_y}.`);
           refreshGpGrid();
-          if (typeof refreshInstalledGamePresetsGallery === 'function') refreshInstalledGamePresetsGallery();
+          refreshInstalledGpGallery();
         } else {
           alert('Install failed: ' + r.error);
           installBtn.disabled = false;
-          installBtn.textContent = isMatching ? 'Install' : 'Install anyway';
+          installBtn.textContent = isMatching ? 'INSTALL' : 'INSTALL ANYWAY';
         }
       });
     }
 
-    // Uninstall button
+    // Uninstall button (from community tab)
     const uninstallBtn = card.querySelector('[data-act="uninstall"]');
     if (uninstallBtn) {
       uninstallBtn.addEventListener('click', async () => {
@@ -1381,12 +1442,17 @@ function renderGpGrid(installedIds) {
         const r = await api.communityGamePresetUninstall(item.id);
         if (r.ok) {
           refreshGpGrid();
-          if (typeof refreshInstalledGamePresetsGallery === 'function') refreshInstalledGamePresetsGallery();
+          refreshInstalledGpGallery();
         } else {
           alert('Uninstall failed: ' + r.error);
         }
       });
     }
+
+    // Details button
+    card.querySelector('[data-act="details"]').addEventListener('click', () => {
+      openGpDetailsModal(item);
+    });
 
     grid.appendChild(card);
   }
@@ -1482,6 +1548,287 @@ function openReportModalGP(item) {
     else alert('Report failed: ' + r.error);
   });
 }
+
+// ===== GAME PRESET DETAILS MODAL =====
+async function openGpDetailsModal(item) {
+  if (!item || typeof item !== 'object') return;
+  const modal = document.getElementById('gp-details-modal');
+  modal.style.display = 'flex';
+  document.getElementById('gp-details-name').textContent = item.name || '(untitled)';
+  document.getElementById('gp-details-author').textContent = '@' + (item.author || 'anonymous');
+  document.getElementById('gp-details-game').textContent = item.game || 'Any game';
+  document.getElementById('gp-details-resolution').textContent = item.resolution || '—';
+  const modeLabel = {
+    fullscreen_exclusive: 'Fullscreen Exclusive',
+    borderless_fullscreen: 'Borderless Fullscreen',
+    windowed: 'Windowed',
+    maximized_windowed: 'Maximized Windowed',
+    fullscreen_optimized: 'Fullscreen Optimized',
+    any: 'Any Mode'
+  }[item.display_mode] || item.display_mode || '—';
+  document.getElementById('gp-details-mode').textContent = modeLabel;
+  const ox = Number.isFinite(item.offset_x) ? item.offset_x : 0;
+  const oy = Number.isFinite(item.offset_y) ? item.offset_y : 0;
+  document.getElementById('gp-details-offset').textContent = `X: ${ox >= 0 ? '+' : ''}${ox}, Y: ${oy >= 0 ? '+' : ''}${oy}`;
+  document.getElementById('gp-details-description').textContent = item.description || 'No description provided.';
+  document.getElementById('gp-details-downloads').textContent = `↓ ${item.downloads || 0} installs`;
+
+  // Install / Installed button
+  const installBtn = document.getElementById('gp-details-install');
+  const installedList = await api.communityGamePresetListInstalled();
+  const isInstalled = (installedList || []).some(x => x.id === item.id);
+  installBtn.textContent = isInstalled ? '✓ INSTALLED' : 'INSTALL';
+  installBtn.disabled = isInstalled;
+  installBtn.onclick = async () => {
+    if (isInstalled) return;
+    installBtn.disabled = true;
+    installBtn.textContent = 'Installing...';
+    const r = await api.communityGamePresetInstall(item.id);
+    if (r.ok) {
+      applyToUI(r.settings);
+      updateGpUploadCurrent();
+      installBtn.textContent = '✓ INSTALLED';
+      installBtn.disabled = true;
+      refreshGpGrid();
+      refreshInstalledGpGallery();
+    } else {
+      alert('Install failed: ' + r.error);
+      installBtn.disabled = false;
+      installBtn.textContent = 'INSTALL';
+    }
+  };
+
+  // Review button
+  document.getElementById('gp-details-review').onclick = () => {
+    document.getElementById('gp-details-modal').style.display = 'none';
+    openGpReviewModal(item);
+  };
+
+  // Fetch and render reviews
+  const starsEl = document.getElementById('gp-details-stars');
+  const breakdownEl = document.getElementById('gp-rating-breakdown');
+  const reviewsListEl = document.getElementById('gp-reviews-list');
+  const reviewCountEl = document.getElementById('gp-details-review-count');
+  starsEl.innerHTML = '<span class="muted">Loading reviews...</span>';
+  breakdownEl.innerHTML = '';
+  reviewsListEl.innerHTML = '';
+
+  const r = await api.communityGamePresetGetReviews(item.id);
+  if (!r.ok) {
+    starsEl.innerHTML = `<span class="muted">Could not load reviews: ${escapeHtml(r.error || '')}</span>`;
+    return;
+  }
+  const stats = r.stats || {};
+  const avg = parseFloat(stats.avg_rating) || 0;
+  const total = parseInt(stats.total_reviews) || 0;
+  starsEl.innerHTML = `<span class="stars-display" style="font-size:16px">${renderStars(avg)}</span> <span style="font-family:var(--mono);font-size:12px;color:var(--text-dim);margin-left:8px">${avg > 0 ? avg.toFixed(1) : 'No ratings'}</span>`;
+  reviewCountEl.textContent = `${total} review${total === 1 ? '' : 's'}`;
+
+  // Breakdown bars
+  for (let s = 5; s >= 1; s--) {
+    const count = parseInt(stats['star_' + s]) || 0;
+    const pct = total > 0 ? (count / total * 100) : 0;
+    breakdownEl.innerHTML += `
+      <div class="rb-row">
+        <span class="rb-label">${s} ★</span>
+        <div class="rb-bar"><div class="rb-fill" style="width:${pct}%"></div></div>
+        <span class="rb-count">${count}</span>
+      </div>
+    `;
+  }
+
+  // Review list
+  if (!r.reviews || !r.reviews.length) {
+    reviewsListEl.innerHTML = '<p class="muted">No written reviews yet. Be the first!</p>';
+  } else {
+    for (const review of r.reviews) {
+      const date = review.created_at ? new Date(review.created_at).toLocaleDateString() : '';
+      reviewsListEl.innerHTML += `
+        <div class="review-item">
+          <div class="review-head">
+            <span class="review-stars">${renderStars(review.rating)}</span>
+            <span class="review-date">${escapeHtml(date)}</span>
+          </div>
+          ${review.review_text ? `<div class="review-text">${escapeHtml(review.review_text)}</div>` : ''}
+        </div>
+      `;
+    }
+  }
+}
+
+// Close GP details modal
+document.getElementById('gp-details-close').addEventListener('click', () => {
+  document.getElementById('gp-details-modal').style.display = 'none';
+});
+document.getElementById('gp-details-modal').addEventListener('click', e => {
+  if (e.target.id === 'gp-details-modal') {
+    document.getElementById('gp-details-modal').style.display = 'none';
+  }
+});
+
+// ===== GAME PRESET REVIEW MODAL =====
+let gpReviewModalState = { item: null, rating: 0 };
+
+function openGpReviewModal(item) {
+  gpReviewModalState = { item, rating: 0 };
+  document.getElementById('gp-review-subject').textContent = item.name + ' by @' + item.author;
+  document.getElementById('gp-review-text').value = '';
+  document.getElementById('gp-star-label').textContent = 'Click a star to rate';
+  document.querySelectorAll('#gp-star-picker button').forEach(b => b.classList.remove('active'));
+  document.getElementById('gp-review-modal').style.display = 'flex';
+}
+
+document.querySelectorAll('#gp-star-picker button').forEach(b => {
+  b.addEventListener('click', () => {
+    const rating = parseInt(b.dataset.star);
+    gpReviewModalState.rating = rating;
+    document.querySelectorAll('#gp-star-picker button').forEach(x => {
+      x.classList.toggle('active', parseInt(x.dataset.star) <= rating);
+    });
+    const labels = { 1: '1 star · Bad', 2: '2 stars · Poor', 3: '3 stars · Okay', 4: '4 stars · Good', 5: '5 stars · Great' };
+    document.getElementById('gp-star-label').textContent = labels[rating];
+  });
+});
+
+document.getElementById('gp-review-close').addEventListener('click', () => {
+  document.getElementById('gp-review-modal').style.display = 'none';
+});
+document.getElementById('gp-review-cancel').addEventListener('click', () => {
+  document.getElementById('gp-review-modal').style.display = 'none';
+});
+document.getElementById('gp-review-modal').addEventListener('click', e => {
+  if (e.target.id === 'gp-review-modal') {
+    document.getElementById('gp-review-modal').style.display = 'none';
+  }
+});
+document.getElementById('gp-review-submit').addEventListener('click', async () => {
+  if (gpReviewModalState.rating < 1) return alert('Please pick a star rating first.');
+  if (!gpReviewModalState.item) return;
+  const text = document.getElementById('gp-review-text').value.trim();
+  const btn = document.getElementById('gp-review-submit');
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+  const r = await api.communityGamePresetSubmitReview({
+    presetId: gpReviewModalState.item.id,
+    rating: gpReviewModalState.rating,
+    reviewText: text
+  });
+  btn.disabled = false;
+  btn.textContent = 'Submit';
+  if (r.ok) {
+    alert('Thanks for your review!');
+    document.getElementById('gp-review-modal').style.display = 'none';
+    refreshGpGrid();
+  } else {
+    alert('Could not submit review: ' + r.error);
+  }
+});
+
+// ===== INSTALLED GAME PRESETS GALLERY (Display tab) =====
+let _refreshingInstalledGp = false;
+async function refreshInstalledGpGallery() {
+  if (_refreshingInstalledGp) return;
+  _refreshingInstalledGp = true;
+  try {
+    const container = document.getElementById('installed-gp-gallery');
+    if (!container) return;
+    container.innerHTML = '';
+    const raw = await api.communityGamePresetListInstalled();
+    const seen = new Set();
+    const list = [];
+    for (const x of (raw || [])) {
+      if (x && x.id && !seen.has(x.id)) { seen.add(x.id); list.push(x); }
+    }
+    if (!list.length) {
+      container.innerHTML = '<p class="muted" style="grid-column:1/-1;text-align:center;padding:20px;border:1px dashed var(--line)">No community game presets installed yet. Browse Community &raquo; Game Positions to install some!</p>';
+      return;
+    }
+    const curX = currentSettings ? (currentSettings.offsetX || 0) : 0;
+    const curY = currentSettings ? (currentSettings.offsetY || 0) : 0;
+    for (const item of list) {
+      const card = document.createElement('div');
+      const isActive = item.offset_x === curX && item.offset_y === curY;
+      card.className = 'gp-card installed-gp-card' + (isActive ? ' active' : '');
+      const modeLabel = {
+        fullscreen_exclusive: 'FS Exclusive',
+        borderless_fullscreen: 'Borderless FS',
+        windowed: 'Windowed',
+        maximized_windowed: 'Max Windowed',
+        fullscreen_optimized: 'FS Optimized',
+        any: 'Any Mode'
+      }[item.display_mode] || item.display_mode;
+      card.innerHTML = `
+        <div class="card-menu">
+          <button class="card-menu-btn" title="More">⋮</button>
+          <div class="card-menu-popover">
+            <button data-act="delete" class="danger">Delete</button>
+          </div>
+        </div>
+        ${isActive ? '<span class="applied-badge">✓ APPLIED</span>' : ''}
+        <div class="gp-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
+        <div class="gp-meta">@${escapeHtml(item.author)} · ${escapeHtml(item.game || '')}</div>
+        <div class="gp-specs">
+          <span>${escapeHtml(item.resolution || '')}</span>
+          <span>${escapeHtml(modeLabel || '')}</span>
+        </div>
+        <div class="gp-offset">X: ${item.offset_x >= 0 ? '+' : ''}${item.offset_x}, Y: ${item.offset_y >= 0 ? '+' : ''}${item.offset_y}</div>
+      `;
+      const menuBtn = card.querySelector('.card-menu-btn');
+      const popover = card.querySelector('.card-menu-popover');
+      menuBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        document.querySelectorAll('.card-menu-popover.open').forEach(p => { if (p !== popover) p.classList.remove('open'); });
+        popover.classList.toggle('open');
+      });
+      popover.querySelector('[data-act="delete"]').addEventListener('click', async e => {
+        e.stopPropagation();
+        popover.classList.remove('open');
+        if (!confirm(`Delete "${item.name}" from your installed presets?\n\nThis will decrease its install count in the community.`)) return;
+        const r = await api.communityGamePresetUninstall(item.id);
+        if (r.ok) {
+          refreshInstalledGpGallery();
+          refreshGpGrid();
+        } else {
+          alert('Could not delete: ' + r.error);
+        }
+      });
+
+      // Click card body = apply offset (no count change)
+      card.addEventListener('click', async e => {
+        if (e.target.closest('.card-menu')) return;
+        const r = await api.communityGamePresetApplyInstalled(item.id);
+        if (r.ok) {
+          applyToUI(r.settings);
+          refreshInstalledGpGallery();
+        } else {
+          alert('Could not apply: ' + r.error);
+        }
+      });
+
+      container.appendChild(card);
+    }
+  } finally {
+    _refreshingInstalledGp = false;
+  }
+}
+
+// "Browse Community" jump button
+const btnGoGpCommunity = document.getElementById('btn-go-gp-community');
+if (btnGoGpCommunity) {
+  btnGoGpCommunity.addEventListener('click', () => {
+    const communityNav = document.querySelector('[data-tab="community"]');
+    if (communityNav) communityNav.click();
+    // Switch to Game Positions subtab
+    setTimeout(() => {
+      const gpSubtab = document.querySelector('.subtab[data-subtab="gamepresets"]');
+      if (gpSubtab) gpSubtab.click();
+    }, 50);
+  });
+}
+
+// Initial render of installed GP gallery
+refreshInstalledGpGallery();
+
 
 // Wire up GP toolbar
 const gpSearch = document.getElementById('gp-search');

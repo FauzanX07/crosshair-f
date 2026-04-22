@@ -873,6 +873,17 @@
         </div>
 
         <div class="card">
+          <div class="preset-header">
+            <h3>Installed from Community</h3>
+            <button class="btn ghost" id="btn-go-gp-community">Browse Community &rarr;</button>
+          </div>
+          <p class="muted">Game position presets you installed from the Community tab. Click to apply. Use the 3-dot menu to delete.</p>
+          <div class="installed-gp-gallery" id="installed-gp-gallery">
+            <!-- populated by JS -->
+          </div>
+        </div>
+
+        <div class="card">
           <h3>Position Offset</h3>
           <p class="muted">Manually adjust crosshair position. In-game hotkeys: Alt+Shift+Arrows (1px), Ctrl+Alt+Shift+Arrows (10px).</p>
           <div class="grid-2">
@@ -1003,6 +1014,70 @@
       <div class="review-actions">
         <button class="btn ghost" id="review-cancel">Cancel</button>
         <button class="btn" id="review-submit">Submit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Game Preset Details -->
+  <div class="modal-bg" id="gp-details-modal" style="display:none">
+    <div class="modal details-modal">
+      <button class="modal-close" id="gp-details-close">×</button>
+      <div class="details-header">
+        <div class="details-info" style="flex:1">
+          <h2 id="gp-details-name">Loading...</h2>
+          <div class="details-meta">
+            <span id="gp-details-author">@—</span>
+            <span class="sep">·</span>
+            <span id="gp-details-game">—</span>
+          </div>
+          <div class="details-meta">
+            <span id="gp-details-resolution">—</span>
+            <span class="sep">·</span>
+            <span id="gp-details-mode">—</span>
+          </div>
+          <div class="details-stars" id="gp-details-stars"></div>
+          <div class="details-stats">
+            <span id="gp-details-downloads">↓ 0 installs</span>
+            <span class="sep">·</span>
+            <span id="gp-details-review-count">0 reviews</span>
+          </div>
+          <div class="gp-offset-big" id="gp-details-offset">X: 0, Y: 0</div>
+          <p class="details-description" id="gp-details-description"></p>
+          <div class="details-actions">
+            <button class="btn" id="gp-details-install">Install</button>
+            <button class="btn ghost" id="gp-details-review">Rate &amp; Review</button>
+          </div>
+        </div>
+      </div>
+      <div class="details-section">
+        <h3>Rating Breakdown</h3>
+        <div class="rating-breakdown" id="gp-rating-breakdown"></div>
+      </div>
+      <div class="details-section">
+        <h3>Reviews</h3>
+        <div class="reviews-list" id="gp-reviews-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Rate & Review a Game Preset -->
+  <div class="modal-bg" id="gp-review-modal" style="display:none">
+    <div class="modal review-modal">
+      <button class="modal-close" id="gp-review-close">×</button>
+      <h2>Rate this game preset</h2>
+      <p class="muted" id="gp-review-subject">—</p>
+      <div class="star-picker" id="gp-star-picker">
+        <button data-star="1">★</button>
+        <button data-star="2">★</button>
+        <button data-star="3">★</button>
+        <button data-star="4">★</button>
+        <button data-star="5">★</button>
+      </div>
+      <div class="star-label" id="gp-star-label">Click a star to rate</div>
+      <textarea id="gp-review-text" placeholder="Did the offset work for your setup? Any tips? Max 500 chars." maxlength="500"></textarea>
+      <div class="review-actions">
+        <button class="btn ghost" id="gp-review-cancel">Cancel</button>
+        <button class="btn" id="gp-review-submit">Submit</button>
       </div>
     </div>
   </div>

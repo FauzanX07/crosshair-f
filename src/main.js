@@ -258,6 +258,28 @@ function createSettings() {
   hardenWebContents(settingsWindow.webContents);
   settingsWindow.setMenuBarVisibility(false);
   settingsWindow.loadFile(path.join(__dirname, 'settings.html'));
+
+  // Fix first-click-after-focus bug: when window regains focus (alt-tab back,
+  // taskbar click, tray restore), hover/click state in Chromium can go stale
+  // until mouse moves. Force a renderer notification so JS can reflow listeners.
+  settingsWindow.on('focus', () => {
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      // Force input reset + tell renderer to re-wire hover handlers
+      settingsWindow.webContents.send('window:focused');
+    }
+  });
+  settingsWindow.on('show', () => {
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.webContents.send('window:focused');
+    }
+  });
+  settingsWindow.on('restore', () => {
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.focus();
+      settingsWindow.webContents.send('window:focused');
+    }
+  });
+
   settingsWindow.webContents.on('did-finish-load', () => {
     const displays = screen.getAllDisplays().map((d, i) => ({
       index: i,
@@ -1628,6 +1650,77 @@ ipcMain.handle('gamePreset:report', async (event, { id, reason }) => {
       })
     });
     return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// ========== GAME PRESET REVIEWS & RATINGS ==========
+ipcMain.handle('gamePreset:submitReview', async (event, { presetId, rating, reviewText }) => {
+  try {
+    if (!ipcRateLimit('gamePreset:submitReview', 10, 60000)) return { ok: false, error: 'Too many review submissions, slow down' };
+    if (typeof presetId !== 'string' || !/^[A-Za-z0-9_-]+$/.test(presetId) || presetId.length > 100) {
+      return { ok: false, error: 'Invalid preset ID' };
+    }
+    const r = parseInt(rating);
+    if (isNaN(r) || r < 1 || r > 5) return { ok: false, error: 'Rating must be 1-5' };
+    const text = (typeof reviewText === 'string' ? reviewText : '').slice(0, 500);
+    const deviceId = getDeviceId();
+
+    await supabaseFetch('/rpc/submit_game_preset_review', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_preset_id: presetId,
+        p_device_id: deviceId,
+        p_rating: r,
+        p_review_text: text
+      })
+    });
+    return { ok: true };
+  } catch (e) {
+    console.error('Submit game preset review failed:', e.message);
+    return { ok: false, error: 'Could not submit review. Did you run the reviews SQL? ' + e.message };
+  }
+});
+
+ipcMain.handle('gamePreset:getReviews', async (event, presetId) => {
+  try {
+    if (typeof presetId !== 'string' || !/^[A-Za-z0-9_-]+$/.test(presetId) || presetId.length > 100) {
+      return { ok: false, error: 'Invalid preset ID' };
+    }
+    const reviews = await supabaseFetch('/rpc/get_game_preset_reviews', {
+      method: 'POST',
+      body: JSON.stringify({ p_preset_id: presetId })
+    });
+    const stats = await supabaseFetch('/rpc/get_game_preset_review_stats', {
+      method: 'POST',
+      body: JSON.stringify({ p_preset_id: presetId })
+    });
+    const deviceId = getDeviceId();
+    const myReview = (reviews || []).find(r => r.device_id === deviceId);
+    return {
+      ok: true,
+      reviews: reviews || [],
+      stats: (stats && stats[0]) || { avg_rating: 0, total_reviews: 0, star_1:0, star_2:0, star_3:0, star_4:0, star_5:0 },
+      myReview: myReview || null
+    };
+  } catch (e) {
+    console.error('Get game preset reviews failed:', e.message);
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('gamePreset:getDetails', async (event, presetId) => {
+  try {
+    if (typeof presetId !== 'string' || !/^[A-Za-z0-9_-]+$/.test(presetId) || presetId.length > 100) {
+      return { ok: false, error: 'Invalid preset ID' };
+    }
+    const data = await supabaseFetch(`/game_presets?id=eq.${encodeURIComponent(presetId)}&select=*`);
+    if (!data || !data.length) return { ok: false, error: 'Not found' };
+    const item = data[0];
+    const installed = getInstalledGamePresets();
+    const isInstalled = !!installed.find(x => x.id === presetId);
+    return { ok: true, item, isInstalled };
   } catch (e) {
     return { ok: false, error: e.message };
   }

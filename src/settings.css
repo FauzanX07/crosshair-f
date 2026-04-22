@@ -1955,3 +1955,82 @@ select, button {
   font-size: 10px;
   margin: 0 2px;
 }
+
+/* ============ INSTALLED GAME PRESETS GALLERY (Display tab) ============ */
+.installed-gp-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.installed-gp-card {
+  position: relative;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.installed-gp-card:hover {
+  border-color: var(--accent);
+}
+.installed-gp-card.active {
+  border-color: #4ade80;
+}
+
+/* ============ GP DETAILS MODAL: big offset display ============ */
+.gp-offset-big {
+  font-family: var(--mono);
+  font-size: 16px;
+  color: var(--accent);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  padding: 8px 14px;
+  margin: 10px 0;
+  display: inline-block;
+  letter-spacing: 1px;
+}
+
+/* ============ GP CARD: make sure community-card-actions inherits the same layout fixes ============ */
+.gp-card .community-card-actions {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 4px;
+  margin-top: 6px;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+.gp-card .community-card-actions .btn {
+  padding: 6px 2px !important;
+  font-size: 9px !important;
+  letter-spacing: 0.5px !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+}
+.gp-card .community-rating {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.gp-card {
+  overflow: hidden !important;
+}
+
+/* ============ FIX: first-click-after-focus bug ============ */
+/* During window refocus we temporarily mark body — this triggers a layout
+   recalculation via CSS (not just JS) which unsticks stale :hover states
+   in Chromium. The class is added and removed in the same animation frame. */
+body.window-refocusing *,
+body.window-refocusing *::before,
+body.window-refocusing *::after {
+  /* No actual visual change — just force the engine to re-eval styles */
+  /* stylelint-disable-next-line */
+  transition: none !important;
+}
