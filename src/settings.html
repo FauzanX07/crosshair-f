@@ -594,8 +594,13 @@
               <select id="gp-filter-mode" class="select">
                 <option value="">All Display Modes</option>
                 <option value="borderless">Borderless Windowed</option>
-                <option value="fullscreen">Fullscreen</option>
+                <option value="fullscreen">Fullscreen (Exclusive)</option>
                 <option value="windowed">Windowed</option>
+                <option value="borderless_fullscreen">Borderless Fullscreen</option>
+                <option value="fullscreen_windowed">Fullscreen Windowed</option>
+                <option value="browser">Browser / Web (Roblox)</option>
+                <option value="client">Native Client (Roblox)</option>
+                <option value="any">Any / Not Applicable</option>
               </select>
               <button class="btn ghost" id="btn-gp-refresh">Refresh</button>
             </div>
@@ -652,17 +657,26 @@
                 <label>Display Mode (how your game was running)</label>
                 <select id="gp-upload-mode" class="select">
                   <option value="borderless">Borderless Windowed</option>
-                  <option value="fullscreen">Fullscreen</option>
+                  <option value="fullscreen">Fullscreen (Exclusive)</option>
                   <option value="windowed">Windowed</option>
+                  <option value="borderless_fullscreen">Borderless Fullscreen</option>
+                  <option value="fullscreen_windowed">Fullscreen Windowed</option>
+                  <option value="browser">Browser / Web (Roblox)</option>
+                  <option value="client">Native Client (Roblox)</option>
+                  <option value="any">Any / Not Applicable</option>
                 </select>
               </div>
+            </div>
+            <div class="row">
+              <label>Resolution Override (optional, use if your game runs at different resolution than your desktop)</label>
+              <input type="text" id="gp-upload-res-override" placeholder="e.g. 1920x1080 (leave empty to use your screen resolution)" maxlength="12" />
             </div>
             <div class="row">
               <label>Description (optional, max 300 chars)</label>
               <input type="text" id="gp-upload-desc" placeholder="e.g. Works for default FOV. Use borderless only." maxlength="300" />
             </div>
             <div class="upload-info">
-              <p class="muted">Your current offset (<strong id="gp-upload-current">X: 0, Y: 0</strong>) will be uploaded with your resolution (<strong id="gp-upload-res">detecting...</strong>). Only users with the same resolution + display mode will see this preset.</p>
+              <p class="muted">Your current offset (<strong id="gp-upload-current">X: 0, Y: 0</strong>) will be uploaded with resolution <strong id="gp-upload-res">detecting...</strong>. Only users with the same resolution + display mode will see this preset by default (they can toggle "All Resolutions" to see yours).</p>
             </div>
             <div class="actions">
               <button class="btn" id="btn-gp-upload">Upload Current Offset</button>

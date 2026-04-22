@@ -1288,7 +1288,16 @@ function renderGpGrid(installedIds) {
     const isInstalled = installedIds.includes(item.id);
     const isMatching = item.resolution === userResolution;
 
-    const modeLabel = { borderless: 'Borderless', fullscreen: 'Fullscreen', windowed: 'Windowed' }[item.display_mode] || item.display_mode;
+    const modeLabel = {
+      borderless: 'Borderless',
+      fullscreen: 'Fullscreen',
+      windowed: 'Windowed',
+      borderless_fullscreen: 'Borderless FS',
+      fullscreen_windowed: 'FS Windowed',
+      browser: 'Browser',
+      client: 'Native Client',
+      any: 'Any Mode'
+    }[item.display_mode] || item.display_mode;
 
     card.innerHTML = `
       <div class="card-menu">
@@ -1446,6 +1455,7 @@ if (btnGpUpload) {
     const game = document.getElementById('gp-upload-game').value;
     const displayMode = document.getElementById('gp-upload-mode').value;
     const description = document.getElementById('gp-upload-desc').value.trim();
+    const resOverride = (document.getElementById('gp-upload-res-override').value || '').trim();
 
     if (!name || name.length < 2) return alert('Please enter a preset name (min 2 chars).');
     if (!currentSettings) return alert('Settings not ready, try again in a sec.');
@@ -1454,12 +1464,21 @@ if (btnGpUpload) {
     if (offsetX === 0 && offsetY === 0) {
       if (!confirm('Your current offset is 0,0 (default center). Are you sure you want to upload this?')) return;
     }
-    if (!userResolution) return alert('Could not detect your screen resolution. Restart the app.');
+
+    // Resolution: use override if provided and valid, else auto-detected
+    let finalRes = userResolution;
+    if (resOverride) {
+      if (!/^\d{3,5}x\d{3,5}$/.test(resOverride)) {
+        return alert('Resolution override must be format like 1920x1080 (digits x digits).');
+      }
+      finalRes = resOverride;
+    }
+    if (!finalRes) return alert('Could not detect your screen resolution. Either enter a manual override or restart the app.');
 
     btnGpUpload.disabled = true;
     btnGpUpload.textContent = 'Uploading...';
     const r = await api.communityGamePresetUpload({
-      name, author, game, resolution: userResolution,
+      name, author, game, resolution: finalRes,
       displayMode, offsetX, offsetY, description
     });
     btnGpUpload.disabled = false;
@@ -1469,6 +1488,7 @@ if (btnGpUpload) {
       alert(`Uploaded! Your preset "${name}" is now pending verification. Once approved (usually within a few minutes) it will appear in the browse list.`);
       document.getElementById('gp-upload-name').value = '';
       document.getElementById('gp-upload-desc').value = '';
+      document.getElementById('gp-upload-res-override').value = '';
       refreshGpGrid();
     } else {
       alert('Upload failed: ' + r.error);

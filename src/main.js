@@ -1043,7 +1043,10 @@ ipcMain.handle('gamePreset:upload', async (event, data) => {
     if (!name || name.length < 2 || name.length > 40) return { ok: false, error: 'Name must be 2-40 chars' };
     if (author.length > 30) return { ok: false, error: 'Author too long' };
     if (!/^\d{3,5}x\d{3,5}$/.test(resolution)) return { ok: false, error: 'Invalid resolution format (e.g. 1920x1080)' };
-    if (!['borderless', 'fullscreen', 'windowed'].includes(displayMode)) return { ok: false, error: 'Invalid display mode' };
+    const allowedModes = ['borderless', 'fullscreen', 'windowed',
+                          'borderless_fullscreen', 'fullscreen_windowed',
+                          'browser', 'client', 'any'];
+    if (!allowedModes.includes(displayMode)) return { ok: false, error: 'Invalid display mode' };
     if (isNaN(offsetX) || isNaN(offsetY)) return { ok: false, error: 'Invalid offsets' };
     if (Math.abs(offsetX) > 500 || Math.abs(offsetY) > 500) return { ok: false, error: 'Offset too large (max ±500)' };
 
