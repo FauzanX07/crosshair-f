@@ -28,17 +28,13 @@ function buildShape(s) {
       break;
     }
     case 'cross': {
-      // 4 lines with individual arm length multipliers (default 100% = full length)
-      const at = (s.armTop === undefined ? 100 : s.armTop) / 100;
-      const ab = (s.armBottom === undefined ? 100 : s.armBottom) / 100;
-      const al = (s.armLeft === undefined ? 100 : s.armLeft) / 100;
-      const ar = (s.armRight === undefined ? 100 : s.armRight) / 100;
-      const armLen = half - gap;
-      const lines = [];
-      if (at > 0) lines.push([0, -gap, 0, -gap - armLen * at]);
-      if (ab > 0) lines.push([0, gap, 0, gap + armLen * ab]);
-      if (al > 0) lines.push([-gap, 0, -gap - armLen * al, 0]);
-      if (ar > 0) lines.push([gap, 0, gap + armLen * ar, 0]);
+      // 4 lines: top, bottom, left, right with gap from center
+      const lines = [
+        [0, -gap, 0, -half],
+        [0, gap, 0, half],
+        [-gap, 0, -half, 0],
+        [gap, 0, half, 0]
+      ];
       if (s.outline) {
         for (const [x1, y1, x2, y2] of lines) {
           inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${outline}" stroke-width="${t + ow * 2}" stroke-linecap="square" />`;
@@ -50,15 +46,12 @@ function buildShape(s) {
       break;
     }
     case 't': {
-      // T shape: bottom + left + right (no top arm) - also supports per-arm lengths
-      const ab = (s.armBottom === undefined ? 100 : s.armBottom) / 100;
-      const al = (s.armLeft === undefined ? 100 : s.armLeft) / 100;
-      const ar = (s.armRight === undefined ? 100 : s.armRight) / 100;
-      const armLen = half - gap;
-      const lines = [];
-      if (ab > 0) lines.push([0, gap, 0, gap + armLen * ab]);
-      if (al > 0) lines.push([-gap, 0, -gap - armLen * al, 0]);
-      if (ar > 0) lines.push([gap, 0, gap + armLen * ar, 0]);
+      // T shape: bottom + left + right (no top arm)
+      const lines = [
+        [0, gap, 0, half],
+        [-gap, 0, -half, 0],
+        [gap, 0, half, 0]
+      ];
       if (s.outline) {
         for (const [x1, y1, x2, y2] of lines) {
           inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${outline}" stroke-width="${t + ow * 2}" stroke-linecap="square" />`;

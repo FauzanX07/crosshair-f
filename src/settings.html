@@ -359,28 +359,6 @@
               </div>
             </div>
 
-            <div class="card" id="per-arm-card">
-              <h3>2.5 Per-Arm Lengths <span class="muted" style="font-size:10px;font-weight:400">(Cross/Hybrid/T shapes)</span></h3>
-              <p class="muted" style="font-size:11px;margin-bottom:10px">Customize each arm independently. 100% = default, 0% = hidden.</p>
-              <div class="row">
-                <label>Top Arm <span class="val" id="dval-armTop">100</span>%</label>
-                <input type="range" id="d-armTop" min="0" max="200" value="100" />
-              </div>
-              <div class="row">
-                <label>Bottom Arm <span class="val" id="dval-armBottom">100</span>%</label>
-                <input type="range" id="d-armBottom" min="0" max="200" value="100" />
-              </div>
-              <div class="row">
-                <label>Left Arm <span class="val" id="dval-armLeft">100</span>%</label>
-                <input type="range" id="d-armLeft" min="0" max="200" value="100" />
-              </div>
-              <div class="row">
-                <label>Right Arm <span class="val" id="dval-armRight">100</span>%</label>
-                <input type="range" id="d-armRight" min="0" max="200" value="100" />
-              </div>
-              <button class="btn ghost" id="btn-reset-arms" style="margin-top:8px">Reset all arms to 100%</button>
-            </div>
-
             <div class="card">
               <h3>3. Color</h3>
               <div class="row color-row">
@@ -486,9 +464,16 @@
       <!-- Tab: COMMUNITY -->
       <section class="tab" id="tab-community">
         <header class="tab-header">
-          <h2>Community Crosshairs</h2>
-          <p>Browse and download crosshairs shared by other players. Upload yours for the world to use.</p>
+          <h2>Community</h2>
+          <p>Browse and download crosshairs + game position presets shared by other players.</p>
         </header>
+
+        <div class="subtab-switcher">
+          <button class="subtab active" data-subtab="crosshairs">Crosshairs</button>
+          <button class="subtab" data-subtab="gamepresets">Game Positions</button>
+        </div>
+
+        <div class="subtab-content active" id="subtab-crosshairs">
 
         <div class="card" id="community-browse-card">
           <h3>Browse Community</h3>
@@ -570,6 +555,122 @@
             <button class="btn" id="btn-upload-crosshair">Upload Current Crosshair</button>
           </div>
         </div>
+
+        </div>
+
+        <div class="subtab-content" id="subtab-gamepresets">
+
+          <div class="card">
+            <h3>What are Game Position Presets?</h3>
+            <p class="muted">Game position presets are shared <strong>screen offsets</strong> (X/Y pixel shifts) that align the crosshair with a specific game's aim point. Only presets matching YOUR resolution and display mode are shown, because game aim points are pixel-specific per setup.</p>
+            <p class="muted" style="margin-top:10px">Your screen: <strong id="user-resolution">detecting...</strong></p>
+          </div>
+
+          <div class="card">
+            <h3>Browse Game Position Presets</h3>
+            <div class="community-toolbar">
+              <input type="text" id="gp-search" placeholder="Search by name, game, author..." />
+              <select id="gp-filter-game" class="select">
+                <option value="">All Games</option>
+                <option value="fortnite">Fortnite</option>
+                <option value="valorant">Valorant</option>
+                <option value="cs2">CS2</option>
+                <option value="apex">Apex Legends</option>
+                <option value="warzone">Warzone</option>
+                <option value="overwatch">Overwatch</option>
+                <option value="r6siege">R6 Siege</option>
+                <option value="pubg">PUBG</option>
+                <option value="thefinals">The Finals</option>
+                <option value="rust">Rust</option>
+                <option value="battlefield">Battlefield</option>
+                <option value="halo">Halo</option>
+                <option value="deadlock">Deadlock</option>
+                <option value="marvelrivals">Marvel Rivals</option>
+                <option value="tarkov">Tarkov</option>
+                <option value="huntshowdown">Hunt: Showdown</option>
+                <option value="roblox">Roblox</option>
+                <option value="other">Other</option>
+              </select>
+              <select id="gp-filter-mode" class="select">
+                <option value="">All Display Modes</option>
+                <option value="borderless">Borderless Windowed</option>
+                <option value="fullscreen">Fullscreen</option>
+                <option value="windowed">Windowed</option>
+              </select>
+              <button class="btn ghost" id="btn-gp-refresh">Refresh</button>
+            </div>
+
+            <div class="community-filter-chips">
+              <button class="chip active" data-gp-view="matching">Matching Your Setup</button>
+              <button class="chip" data-gp-view="all">All Resolutions</button>
+              <button class="chip" data-gp-view="installed">Installed</button>
+            </div>
+
+            <div class="gp-grid" id="gp-grid">
+              <!-- populated by JS -->
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Share Your Game Position Preset</h3>
+            <p class="muted">After manually calibrating the crosshair to line up with your game's aim point, upload the offset so other players with the same resolution + display mode can use it.</p>
+            <div class="grid-2">
+              <div class="row">
+                <label>Preset Name</label>
+                <input type="text" id="gp-upload-name" placeholder="e.g. Fortnite Scoped" maxlength="40" />
+              </div>
+              <div class="row">
+                <label>Your Tag</label>
+                <input type="text" id="gp-upload-author" placeholder="e.g. ShadowSniper" maxlength="20" />
+              </div>
+            </div>
+            <div class="grid-2">
+              <div class="row">
+                <label>Game</label>
+                <select id="gp-upload-game" class="select">
+                  <option value="fortnite">Fortnite</option>
+                  <option value="valorant">Valorant</option>
+                  <option value="cs2">CS2</option>
+                  <option value="apex">Apex Legends</option>
+                  <option value="warzone">Warzone</option>
+                  <option value="overwatch">Overwatch</option>
+                  <option value="r6siege">R6 Siege</option>
+                  <option value="pubg">PUBG</option>
+                  <option value="thefinals">The Finals</option>
+                  <option value="rust">Rust</option>
+                  <option value="battlefield">Battlefield</option>
+                  <option value="halo">Halo</option>
+                  <option value="deadlock">Deadlock</option>
+                  <option value="marvelrivals">Marvel Rivals</option>
+                  <option value="tarkov">Tarkov</option>
+                  <option value="huntshowdown">Hunt: Showdown</option>
+                  <option value="roblox">Roblox</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div class="row">
+                <label>Display Mode (how your game was running)</label>
+                <select id="gp-upload-mode" class="select">
+                  <option value="borderless">Borderless Windowed</option>
+                  <option value="fullscreen">Fullscreen</option>
+                  <option value="windowed">Windowed</option>
+                </select>
+              </div>
+            </div>
+            <div class="row">
+              <label>Description (optional, max 300 chars)</label>
+              <input type="text" id="gp-upload-desc" placeholder="e.g. Works for default FOV. Use borderless only." maxlength="300" />
+            </div>
+            <div class="upload-info">
+              <p class="muted">Your current offset (<strong id="gp-upload-current">X: 0, Y: 0</strong>) will be uploaded with your resolution (<strong id="gp-upload-res">detecting...</strong>). Only users with the same resolution + display mode will see this preset.</p>
+            </div>
+            <div class="actions">
+              <button class="btn" id="btn-gp-upload">Upload Current Offset</button>
+            </div>
+          </div>
+
+        </div>
+
       </section>
 
       <!-- Tab: HOTKEYS -->

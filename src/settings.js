@@ -65,12 +65,6 @@ document.querySelectorAll('.nav-item').forEach(btn => {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.getElementById('tab-' + tab).classList.add('active');
     if (tab === 'profiles') refreshProfiles();
-    // Fix: force a frame render so input elements register as interactive
-    // (Electron inputs sometimes need an explicit redraw after tab reveal)
-    requestAnimationFrame(() => {
-      const activeTab = document.getElementById('tab-' + tab);
-      if (activeTab) activeTab.style.opacity = '1';
-    });
   });
 });
 
@@ -162,16 +156,10 @@ function buildShapeSVG(s) {
       break;
     }
     case 'cross': {
-      const at = (s.armTop === undefined ? 100 : s.armTop) / 100;
-      const ab = (s.armBottom === undefined ? 100 : s.armBottom) / 100;
-      const al = (s.armLeft === undefined ? 100 : s.armLeft) / 100;
-      const ar = (s.armRight === undefined ? 100 : s.armRight) / 100;
-      const armLen = half - gap;
-      const lines = [];
-      if (at > 0) lines.push([0, -gap, 0, -gap - armLen * at]);
-      if (ab > 0) lines.push([0, gap, 0, gap + armLen * ab]);
-      if (al > 0) lines.push([-gap, 0, -gap - armLen * al, 0]);
-      if (ar > 0) lines.push([gap, 0, gap + armLen * ar, 0]);
+      const lines = [
+        [0, -gap, 0, -half], [0, gap, 0, half],
+        [-gap, 0, -half, 0], [gap, 0, half, 0]
+      ];
       if (s.outline) for (const [x1,y1,x2,y2] of lines)
         inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${outline}" stroke-width="${t + ow*2}" />`;
       for (const [x1,y1,x2,y2] of lines)
@@ -179,14 +167,7 @@ function buildShapeSVG(s) {
       break;
     }
     case 't': {
-      const ab = (s.armBottom === undefined ? 100 : s.armBottom) / 100;
-      const al = (s.armLeft === undefined ? 100 : s.armLeft) / 100;
-      const ar = (s.armRight === undefined ? 100 : s.armRight) / 100;
-      const armLen = half - gap;
-      const lines = [];
-      if (ab > 0) lines.push([0, gap, 0, gap + armLen * ab]);
-      if (al > 0) lines.push([-gap, 0, -gap - armLen * al, 0]);
-      if (ar > 0) lines.push([gap, 0, gap + armLen * ar, 0]);
+      const lines = [[0,gap,0,half],[-gap,0,-half,0],[gap,0,half,0]];
       if (s.outline) for (const [x1,y1,x2,y2] of lines)
         inner += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${outline}" stroke-width="${t + ow*2}" />`;
       for (const [x1,y1,x2,y2] of lines)
@@ -664,32 +645,28 @@ $('btn-export-png').addEventListener('click', () => {
 
 // ===== Profiles =====
 async function refreshProfiles() {
-  let names = await api.listProfiles();
-  // Ensure "default" is always in the list
-  if (!names.includes('default')) names = ['default', ...names];
+  const names = await api.listProfiles();
   const list = $('profile-list');
   list.innerHTML = '';
+  if (!names.length) {
+    list.innerHTML = '<p class="muted">No profiles yet. Save your current setup above.</p>';
+    return;
+  }
   for (const name of names) {
-    const isActive = name === (currentSettings && currentSettings.activeProfile);
+    const isActive = name === currentSettings.activeProfile;
     const div = document.createElement('div');
     div.className = 'profile-item' + (isActive ? ' active' : '');
     div.innerHTML = `
       <span class="pdot"></span>
-      <span class="pname">${escapeHtml(name)}</span>
-      <button class="btn ghost" data-act="load">${isActive ? 'Active' : 'Load'}</button>
+      <span class="pname">${name}</span>
+      <button class="btn ghost" data-act="load">Load</button>
       <button class="btn danger" data-act="del">${name === 'default' ? 'Locked' : 'Delete'}</button>
     `;
-    const loadBtn = div.querySelector('[data-act="load"]');
-    if (isActive) {
-      loadBtn.disabled = true;
-    } else {
-      loadBtn.addEventListener('click', async () => {
-        const s = await api.loadProfile(name);
-        currentSettings = s;
-        applyToUI(s);
-        refreshProfiles();
-      });
-    }
+    div.querySelector('[data-act="load"]').addEventListener('click', async () => {
+      const s = await api.loadProfile(name);
+      applyToUI(s);
+      refreshProfiles();
+    });
     const delBtn = div.querySelector('[data-act="del"]');
     if (name === 'default') {
       delBtn.disabled = true;
@@ -1213,6 +1190,292 @@ if (btnGoCommunity) {
 // Initial load of installed gallery
 refreshInstalledGallery();
 
+// ===== COMMUNITY GAME POSITION PRESETS =====
+let gpState = { items: [], installed: [], view: 'matching', search: '', game: '', mode: '' };
+let userResolution = '';
+
+// Sub-tab switcher in Community tab
+document.querySelectorAll('.subtab').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.subtab').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    document.querySelectorAll('.subtab-content').forEach(x => x.classList.remove('active'));
+    document.getElementById('subtab-' + b.dataset.subtab).classList.add('active');
+    if (b.dataset.subtab === 'gamepresets') {
+      detectResolutionAndLoad();
+    }
+  });
+});
+
+async function detectResolutionAndLoad() {
+  try {
+    const r = await api.communityGamePresetGetResolution();
+    if (r.ok) {
+      userResolution = r.resolution;
+      const el1 = document.getElementById('user-resolution');
+      const el2 = document.getElementById('gp-upload-res');
+      if (el1) el1.textContent = userResolution;
+      if (el2) el2.textContent = userResolution;
+    }
+  } catch (e) {}
+  updateGpUploadCurrent();
+  refreshGpGrid();
+}
+
+function updateGpUploadCurrent() {
+  const el = document.getElementById('gp-upload-current');
+  if (el && currentSettings) {
+    el.textContent = `X: ${currentSettings.offsetX || 0}, Y: ${currentSettings.offsetY || 0}`;
+  }
+}
+
+async function refreshGpGrid() {
+  const grid = document.getElementById('gp-grid');
+  if (!grid) return;
+  grid.innerHTML = '<p class="muted" style="grid-column:1/-1;text-align:center;padding:20px">Loading...</p>';
+
+  // Fetch installed list first
+  try {
+    gpState.installed = await api.communityGamePresetListInstalled();
+  } catch (e) { gpState.installed = []; }
+  const installedIds = (gpState.installed || []).map(x => x.id);
+
+  if (gpState.view === 'installed') {
+    gpState.items = gpState.installed;
+    renderGpGrid(installedIds);
+    return;
+  }
+
+  // Build filter params
+  const params = {
+    search: gpState.search || '',
+    game: gpState.game || '',
+    displayMode: gpState.mode || '',
+    sort: 'popular'
+  };
+  if (gpState.view === 'matching' && userResolution) {
+    params.resolution = userResolution;
+  }
+
+  try {
+    const r = await api.communityGamePresetList(params);
+    gpState.items = r.ok ? (r.items || []) : [];
+    renderGpGrid(installedIds);
+  } catch (e) {
+    grid.innerHTML = `<p class="muted" style="grid-column:1/-1;text-align:center;padding:20px;color:var(--danger)">Failed to load: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+function renderGpGrid(installedIds) {
+  const grid = document.getElementById('gp-grid');
+  grid.innerHTML = '';
+  if (!gpState.items.length) {
+    let msg;
+    if (gpState.view === 'installed') {
+      msg = 'You have not installed any game position presets yet.';
+    } else if (gpState.view === 'matching') {
+      msg = `No presets found for your setup (${userResolution}). Try "All Resolutions" or be the first to upload one!`;
+    } else {
+      msg = 'No presets found.';
+    }
+    grid.innerHTML = `<p class="muted" style="grid-column:1/-1;text-align:center;padding:20px">${msg}</p>`;
+    return;
+  }
+
+  for (const item of gpState.items) {
+    const card = document.createElement('div');
+    card.className = 'gp-card';
+    const isInstalled = installedIds.includes(item.id);
+    const isMatching = item.resolution === userResolution;
+
+    const modeLabel = { borderless: 'Borderless', fullscreen: 'Fullscreen', windowed: 'Windowed' }[item.display_mode] || item.display_mode;
+
+    card.innerHTML = `
+      <div class="card-menu">
+        <button class="card-menu-btn" title="More">⋮</button>
+        <div class="card-menu-popover">
+          <button data-act="report" class="danger">Report</button>
+        </div>
+      </div>
+      <div class="gp-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
+      <div class="gp-meta">@${escapeHtml(item.author)} · ${escapeHtml(item.game)}</div>
+      <div class="gp-specs">
+        <span class="${isMatching ? 'match' : 'nomatch'}">${escapeHtml(item.resolution)}</span>
+        <span>${escapeHtml(modeLabel)}</span>
+      </div>
+      <div class="gp-offset">X: ${item.offset_x >= 0 ? '+' : ''}${item.offset_x}, Y: ${item.offset_y >= 0 ? '+' : ''}${item.offset_y}</div>
+      ${item.description ? `<div class="gp-desc">${escapeHtml(item.description)}</div>` : ''}
+      <div class="gp-footer">
+        <span class="muted">↓ ${item.downloads || 0}</span>
+        ${isInstalled
+          ? `<button class="btn ghost" data-act="uninstall">✓ Installed</button>`
+          : `<button class="btn" data-act="install">${isMatching ? 'Install' : 'Install anyway'}</button>`}
+      </div>
+    `;
+
+    // 3-dot menu
+    const menuBtn = card.querySelector('.card-menu-btn');
+    const popover = card.querySelector('.card-menu-popover');
+    menuBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      document.querySelectorAll('.card-menu-popover.open').forEach(p => { if (p !== popover) p.classList.remove('open'); });
+      popover.classList.toggle('open');
+    });
+    popover.querySelector('[data-act="report"]').addEventListener('click', async e => {
+      e.stopPropagation();
+      popover.classList.remove('open');
+      openReportModalGP(item);
+    });
+
+    // Install button
+    const installBtn = card.querySelector('[data-act="install"]');
+    if (installBtn) {
+      installBtn.addEventListener('click', async () => {
+        installBtn.disabled = true;
+        installBtn.textContent = 'Installing...';
+        const r = await api.communityGamePresetInstall(item.id);
+        if (r.ok) {
+          applyToUI(r.settings);
+          updateGpUploadCurrent();
+          alert(`"${item.name}" installed! Offset applied: X: ${r.entry.offset_x}, Y: ${r.entry.offset_y}.`);
+          refreshGpGrid();
+          if (typeof refreshInstalledGamePresetsGallery === 'function') refreshInstalledGamePresetsGallery();
+        } else {
+          alert('Install failed: ' + r.error);
+          installBtn.disabled = false;
+          installBtn.textContent = isMatching ? 'Install' : 'Install anyway';
+        }
+      });
+    }
+
+    // Uninstall button
+    const uninstallBtn = card.querySelector('[data-act="uninstall"]');
+    if (uninstallBtn) {
+      uninstallBtn.addEventListener('click', async () => {
+        if (!confirm(`Remove "${item.name}" from your installed presets?\n\nThis also decreases its install count.`)) return;
+        const r = await api.communityGamePresetUninstall(item.id);
+        if (r.ok) {
+          refreshGpGrid();
+          if (typeof refreshInstalledGamePresetsGallery === 'function') refreshInstalledGamePresetsGallery();
+        } else {
+          alert('Uninstall failed: ' + r.error);
+        }
+      });
+    }
+
+    grid.appendChild(card);
+  }
+}
+
+// Game preset report modal (simplified, re-uses same style as crosshair report)
+function openReportModalGP(item) {
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal report-modal">
+      <button class="modal-close" id="rpt-close-gp">×</button>
+      <h2>Report Preset</h2>
+      <p class="muted">Reporting "${escapeHtml(item.name)}" by @${escapeHtml(item.author)}</p>
+      <p class="muted" style="margin:12px 0 8px">Select a reason:</p>
+      <div class="report-reasons">
+        <button class="chip-btn" data-reason="spam">Spam</button>
+        <button class="chip-btn" data-reason="wrong_data">Wrong data</button>
+        <button class="chip-btn" data-reason="offensive">Offensive name</button>
+        <button class="chip-btn" data-reason="broken">Does not work</button>
+        <button class="chip-btn" data-reason="other">Other</button>
+      </div>
+      <div class="review-actions">
+        <button class="btn ghost" id="rpt-cancel-gp">Cancel</button>
+        <button class="btn" id="rpt-submit-gp" disabled>Submit Report</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(bg);
+  let selectedReason = null;
+  bg.querySelectorAll('.chip-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      bg.querySelectorAll('.chip-btn').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      selectedReason = b.dataset.reason;
+      bg.querySelector('#rpt-submit-gp').disabled = false;
+    });
+  });
+  const close = () => bg.remove();
+  bg.querySelector('#rpt-close-gp').addEventListener('click', close);
+  bg.querySelector('#rpt-cancel-gp').addEventListener('click', close);
+  bg.addEventListener('click', e => { if (e.target === bg) close(); });
+  bg.querySelector('#rpt-submit-gp').addEventListener('click', async () => {
+    if (!selectedReason) return;
+    const r = await api.communityGamePresetReport(item.id, selectedReason);
+    if (r.ok) { alert('Report submitted. Thanks!'); close(); }
+    else alert('Report failed: ' + r.error);
+  });
+}
+
+// Wire up GP toolbar
+const gpSearch = document.getElementById('gp-search');
+if (gpSearch) {
+  gpSearch.addEventListener('pointerdown', e => { e.stopPropagation(); gpSearch.focus(); });
+  gpSearch.addEventListener('input', debounce(() => {
+    gpState.search = gpSearch.value.trim();
+    refreshGpGrid();
+  }, 400));
+}
+const gpFilterGame = document.getElementById('gp-filter-game');
+if (gpFilterGame) gpFilterGame.addEventListener('change', e => { gpState.game = e.target.value; refreshGpGrid(); });
+const gpFilterMode = document.getElementById('gp-filter-mode');
+if (gpFilterMode) gpFilterMode.addEventListener('change', e => { gpState.mode = e.target.value; refreshGpGrid(); });
+const btnGpRefresh = document.getElementById('btn-gp-refresh');
+if (btnGpRefresh) btnGpRefresh.addEventListener('click', () => refreshGpGrid());
+
+document.querySelectorAll('[data-gp-view]').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('[data-gp-view]').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    gpState.view = chip.dataset.gpView;
+    refreshGpGrid();
+  });
+});
+
+// Upload game preset
+const btnGpUpload = document.getElementById('btn-gp-upload');
+if (btnGpUpload) {
+  btnGpUpload.addEventListener('click', async () => {
+    const name = document.getElementById('gp-upload-name').value.trim();
+    const author = document.getElementById('gp-upload-author').value.trim() || 'anonymous';
+    const game = document.getElementById('gp-upload-game').value;
+    const displayMode = document.getElementById('gp-upload-mode').value;
+    const description = document.getElementById('gp-upload-desc').value.trim();
+
+    if (!name || name.length < 2) return alert('Please enter a preset name (min 2 chars).');
+    if (!currentSettings) return alert('Settings not ready, try again in a sec.');
+    const offsetX = currentSettings.offsetX || 0;
+    const offsetY = currentSettings.offsetY || 0;
+    if (offsetX === 0 && offsetY === 0) {
+      if (!confirm('Your current offset is 0,0 (default center). Are you sure you want to upload this?')) return;
+    }
+    if (!userResolution) return alert('Could not detect your screen resolution. Restart the app.');
+
+    btnGpUpload.disabled = true;
+    btnGpUpload.textContent = 'Uploading...';
+    const r = await api.communityGamePresetUpload({
+      name, author, game, resolution: userResolution,
+      displayMode, offsetX, offsetY, description
+    });
+    btnGpUpload.disabled = false;
+    btnGpUpload.textContent = 'Upload Current Offset';
+
+    if (r.ok) {
+      alert(`Uploaded! Your preset "${name}" is now pending verification. Once approved (usually within a few minutes) it will appear in the browse list.`);
+      document.getElementById('gp-upload-name').value = '';
+      document.getElementById('gp-upload-desc').value = '';
+      refreshGpGrid();
+    } else {
+      alert('Upload failed: ' + r.error);
+    }
+  });
+}
+
 function escapeHtml(s) {
   if (s === undefined || s === null) return '';
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
@@ -1232,18 +1495,10 @@ function renderMiniSVG(preset) {
 $('btn-community-refresh').addEventListener('click', () => { communityPage = 0; refreshCommunity(); });
 $('btn-community-prev').addEventListener('click', () => { if (communityPage > 0) { communityPage--; refreshCommunity(); } });
 $('btn-community-next').addEventListener('click', () => { communityPage++; refreshCommunity(); });
-
-// Fix Electron input first-click focus bug (tab visibility transition issue)
+// Fix first-click focus issue in Electron
 const searchInput = $('community-search');
-// On pointerdown (fires before click), force focus synchronously
-searchInput.addEventListener('pointerdown', (e) => {
-  e.stopPropagation();
-  searchInput.focus();
-});
-searchInput.addEventListener('mousedown', (e) => {
-  // Belt-and-suspenders - also focus on mousedown
-  setTimeout(() => searchInput.focus(), 0);
-});
+searchInput.addEventListener('click', () => searchInput.focus());
+searchInput.addEventListener('focus', () => searchInput.select());
 searchInput.addEventListener('input', debounce(() => {
   communityState.search = searchInput.value.trim();
   communityPage = 0;
@@ -1334,21 +1589,16 @@ function makePresetCard(p, isCustom) {
   card.dataset.id = p.id;
 
   // Mini SVG preview
+  const previewBox = 120;
   const pSettings = { ...p.preset };
+  // Scale preset size to fit preview nicely
   const scale = Math.min(1, 70 / (pSettings.size || 32));
   const miniPreset = { ...pSettings, size: pSettings.size * scale, thickness: (pSettings.thickness || 2) * scale, gapSize: (pSettings.gapSize || 0) * scale, centerDotSize: (pSettings.centerDotSize || 2) * scale };
   const box = 100;
   const svgInner = buildShapeSVG(miniPreset);
 
   card.innerHTML = `
-    ${isCustom ? `
-      <div class="card-menu">
-        <button class="card-menu-btn" title="More">⋮</button>
-        <div class="card-menu-popover">
-          <button data-act="delete" class="danger">Delete</button>
-        </div>
-      </div>
-    ` : ''}
+    ${isCustom ? '<button class="delete-btn" title="Delete">×</button>' : ''}
     <div class="preset-thumb">
       <svg viewBox="${-box/2} ${-box/2} ${box} ${box}" width="100%" height="100%">
         <g transform="rotate(${pSettings.rotation || 0})">${svgInner}</g>
@@ -1359,24 +1609,17 @@ function makePresetCard(p, isCustom) {
   `;
 
   card.addEventListener('click', async e => {
-    if (e.target.closest('.card-menu')) return;
+    if (e.target.classList.contains('delete-btn')) return;
     const s = await api.setSettings(p.preset);
     applyToUI(s);
+    // Highlight
     document.querySelectorAll('.preset-card').forEach(c => c.classList.remove('active'));
     card.classList.add('active');
   });
 
   if (isCustom) {
-    const menuBtn = card.querySelector('.card-menu-btn');
-    const popover = card.querySelector('.card-menu-popover');
-    menuBtn.addEventListener('click', e => {
+    card.querySelector('.delete-btn').addEventListener('click', async e => {
       e.stopPropagation();
-      document.querySelectorAll('.card-menu-popover.open').forEach(p2 => { if (p2 !== popover) p2.classList.remove('open'); });
-      popover.classList.toggle('open');
-    });
-    popover.querySelector('[data-act="delete"]').addEventListener('click', async e => {
-      e.stopPropagation();
-      popover.classList.remove('open');
       if (!confirm(`Delete "${p.name}"?`)) return;
       await api.deleteCustomCrosshair(p.id);
       userCustoms = userCustoms.filter(x => x.id !== p.id);
@@ -1426,19 +1669,14 @@ let designerState = {
   outlineThickness: 1,
   centerDot: true,
   centerDotSize: 2,
-  centerDotColor: '#FF0000',
-  armTop: 100,
-  armBottom: 100,
-  armLeft: 100,
-  armRight: 100
+  centerDotColor: '#FF0000'
 };
 
 function resetDesigner() {
   designerState = {
     shape: 'cross', size: 24, thickness: 2, gapSize: 3, rotation: 0, opacity: 100,
     color: '#00FF00', outline: true, outlineColor: '#000000', outlineThickness: 1,
-    centerDot: true, centerDotSize: 2, centerDotColor: '#FF0000',
-    armTop: 100, armBottom: 100, armLeft: 100, armRight: 100
+    centerDot: true, centerDotSize: 2, centerDotColor: '#FF0000'
   };
   syncDesignerUI();
 }
@@ -1458,20 +1696,6 @@ function syncDesignerUI() {
   $('d-centerDot').checked = s.centerDot;
   $('d-centerDotSize').value = s.centerDotSize; $('dval-centerDotSize').textContent = s.centerDotSize;
   $('d-centerDotColor').value = s.centerDotColor; $('d-centerDotColorHex').value = s.centerDotColor.toUpperCase();
-  // Per-arm sliders
-  if ($('d-armTop')) {
-    $('d-armTop').value = s.armTop; $('dval-armTop').textContent = s.armTop;
-    $('d-armBottom').value = s.armBottom; $('dval-armBottom').textContent = s.armBottom;
-    $('d-armLeft').value = s.armLeft; $('dval-armLeft').textContent = s.armLeft;
-    $('d-armRight').value = s.armRight; $('dval-armRight').textContent = s.armRight;
-  }
-  // Show per-arm card only for shapes that support it
-  const perArmCard = $('per-arm-card');
-  if (perArmCard) {
-    const supports = ['cross', 't', 'hybrid'].includes(s.shape);
-    perArmCard.style.opacity = supports ? '1' : '0.4';
-    perArmCard.style.pointerEvents = supports ? 'auto' : 'none';
-  }
   document.querySelectorAll('.base-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.shape === s.shape);
   });
@@ -1618,28 +1842,6 @@ function wireDesigner() {
     designerState.centerDot = e.target.checked;
     renderWorkshop(); validateDesign();
   });
-
-  // Per-arm length sliders
-  ['armTop', 'armBottom', 'armLeft', 'armRight'].forEach(arm => {
-    const el = $('d-' + arm);
-    if (!el) return;
-    el.addEventListener('input', e => {
-      const v = parseInt(e.target.value);
-      designerState[arm] = v;
-      $('dval-' + arm).textContent = v;
-      renderWorkshop(); validateDesign();
-    });
-  });
-  const btnResetArms = $('btn-reset-arms');
-  if (btnResetArms) {
-    btnResetArms.addEventListener('click', () => {
-      designerState.armTop = 100;
-      designerState.armBottom = 100;
-      designerState.armLeft = 100;
-      designerState.armRight = 100;
-      syncDesignerUI();
-    });
-  }
 
   $('btn-reset-design').addEventListener('click', resetDesigner);
   $('btn-finish-design').addEventListener('click', async () => {

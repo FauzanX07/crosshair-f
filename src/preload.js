@@ -42,6 +42,16 @@ contextBridge.exposeInMainWorld('crosshairAPI', {
   communityGetReviews: (id) => ipcRenderer.invoke('community:getReviews', id),
   communityGetDetails: (id) => ipcRenderer.invoke('community:getDetails', id),
 
+  // Community Game Position Presets (resolution + display mode filtered)
+  communityGamePresetGetResolution: () => ipcRenderer.invoke('gamePreset:getResolution'),
+  communityGamePresetUpload: (data) => ipcRenderer.invoke('gamePreset:upload', data),
+  communityGamePresetList: (params) => ipcRenderer.invoke('gamePreset:list', params),
+  communityGamePresetInstall: (id) => ipcRenderer.invoke('gamePreset:install', id),
+  communityGamePresetUninstall: (id) => ipcRenderer.invoke('gamePreset:uninstall', id),
+  communityGamePresetListInstalled: () => ipcRenderer.invoke('gamePreset:listInstalled'),
+  communityGamePresetApplyInstalled: (id) => ipcRenderer.invoke('gamePreset:applyInstalled', id),
+  communityGamePresetReport: (id, reason) => ipcRenderer.invoke('gamePreset:report', { id, reason }),
+
   // (legacy, kept for back-compat with any cached code)
   communityUnapply: (id) => ipcRenderer.invoke('community:uninstall', id),
   communityListApplied: () => ipcRenderer.invoke('community:listInstalled'),

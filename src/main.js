@@ -245,24 +245,6 @@ function resetPosition() {
 }
 
 function loadProfile(name) {
-  if (name === 'default') {
-    // "Default" means reset to factory defaults
-    const preserved = {
-      profiles: settings.profiles,
-      monitorIndex: settings.monitorIndex,
-      hotkeyToggle: settings.hotkeyToggle,
-      hotkeyHide: settings.hotkeyHide,
-      hotkeyReset: settings.hotkeyReset,
-      startWithWindows: settings.startWithWindows,
-      startMinimized: settings.startMinimized,
-      hideOnCapture: settings.hideOnCapture
-    };
-    settings = { ...defaultSettings, ...preserved, activeProfile: 'default' };
-    saveSettings();
-    broadcastSettings();
-    rebuildTrayMenu();
-    return;
-  }
   const p = (settings.profiles || {})[name];
   if (!p) return;
   settings = { ...settings, ...p, activeProfile: name, profiles: settings.profiles };
@@ -567,8 +549,7 @@ function validateCustomPreset(preset) {
   const ranges = {
     size: [4, 200], thickness: [0.5, 20], gapSize: [0, 60],
     rotation: [0, 359], opacity: [10, 100],
-    outlineThickness: [0.5, 6], centerDotSize: [0.5, 20],
-    armTop: [0, 200], armBottom: [0, 200], armLeft: [0, 200], armRight: [0, 200]
+    outlineThickness: [0.5, 6], centerDotSize: [0.5, 20]
   };
   for (const [k, [min, max]] of Object.entries(ranges)) {
     if (preset[k] !== undefined) {
@@ -649,8 +630,7 @@ async function supabaseFetch(urlPath, options = {}) {
 
 function sanitizeCommunityPreset(preset) {
   const allowed = ['shape','size','thickness','gapSize','color','opacity','rotation',
-                   'outline','outlineColor','outlineThickness','centerDot','centerDotSize','centerDotColor',
-                   'armTop','armBottom','armLeft','armRight'];
+                   'outline','outlineColor','outlineThickness','centerDot','centerDotSize','centerDotColor'];
   const allowedShapes = ['cross','dot','t','circle','hybrid','scope','sniper',
                          'x','corners','brackets','chevron','diamond','triangle','star',
                          'ksight','prong3','prong6','double_ring','hollow_cross','plus_dot'];
@@ -663,8 +643,7 @@ function sanitizeCommunityPreset(preset) {
   const ranges = {
     size: [4, 200], thickness: [0.5, 20], gapSize: [0, 60],
     opacity: [10, 100], rotation: [0, 359],
-    outlineThickness: [0.5, 6], centerDotSize: [0.5, 20],
-    armTop: [0, 200], armBottom: [0, 200], armLeft: [0, 200], armRight: [0, 200]
+    outlineThickness: [0.5, 6], centerDotSize: [0.5, 20]
   };
   for (const [k, [min, max]] of Object.entries(ranges)) {
     if (out[k] !== undefined) {
@@ -1026,6 +1005,209 @@ ipcMain.handle('community:report', async (event, { id, reason }) => {
   }
 });
 
+// ========== COMMUNITY GAME POSITION PRESETS ==========
+// These are PC-specific offsets people share. Filtered by resolution + display mode
+// so only compatible presets show to each user.
+
+// Detect user's primary screen resolution
+ipcMain.handle('gamePreset:getResolution', () => {
+  try {
+    const { width, height } = screen.getPrimaryDisplay().size;
+    return { ok: true, resolution: `${width}x${height}`, width, height };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// List of installed community game presets (so we don't show Install on ones already installed)
+function getInstalledGamePresets() {
+  return store ? (store.get('installedGamePresets') || []) : [];
+}
+function setInstalledGamePresets(list) {
+  if (store) store.set('installedGamePresets', list);
+}
+
+// Upload a game preset to Supabase
+ipcMain.handle('gamePreset:upload', async (event, data) => {
+  try {
+    const name = (data.name || '').trim();
+    const author = (data.author || 'anonymous').trim();
+    const game = (data.game || 'other').trim().toLowerCase();
+    const resolution = (data.resolution || '').trim();
+    const displayMode = (data.displayMode || 'borderless').toLowerCase();
+    const offsetX = parseInt(data.offsetX);
+    const offsetY = parseInt(data.offsetY);
+    const description = (data.description || '').slice(0, 300);
+
+    // Validation
+    if (!name || name.length < 2 || name.length > 40) return { ok: false, error: 'Name must be 2-40 chars' };
+    if (author.length > 30) return { ok: false, error: 'Author too long' };
+    if (!/^\d{3,5}x\d{3,5}$/.test(resolution)) return { ok: false, error: 'Invalid resolution format (e.g. 1920x1080)' };
+    if (!['borderless', 'fullscreen', 'windowed'].includes(displayMode)) return { ok: false, error: 'Invalid display mode' };
+    if (isNaN(offsetX) || isNaN(offsetY)) return { ok: false, error: 'Invalid offsets' };
+    if (Math.abs(offsetX) > 500 || Math.abs(offsetY) > 500) return { ok: false, error: 'Offset too large (max ±500)' };
+
+    const allowedGames = ['fortnite', 'valorant', 'cs2', 'apex', 'warzone', 'overwatch', 'r6siege',
+                          'pubg', 'thefinals', 'rust', 'battlefield', 'halo', 'deadlock', 'marvelrivals',
+                          'tarkov', 'huntshowdown', 'roblox', 'other'];
+    if (!allowedGames.includes(game)) return { ok: false, error: 'Invalid game' };
+
+    const payload = {
+      name, author, game,
+      resolution, display_mode: displayMode,
+      offset_x: offsetX, offset_y: offsetY,
+      description,
+      verified: false,
+      downloads: 0,
+      rating: 0
+    };
+
+    const result = await supabaseFetch('/game_presets', {
+      method: 'POST',
+      headers: { 'Prefer': 'return=representation' },
+      body: JSON.stringify(payload)
+    });
+    return { ok: true, item: (result && result[0]) || payload };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// List game presets with filters (resolution, displayMode, game, search, sort)
+ipcMain.handle('gamePreset:list', async (event, params = {}) => {
+  const { search = '', game = '', resolution = '', displayMode = '',
+          sort = 'popular', page = 0, limit = 30 } = params;
+  try {
+    let query = '/game_presets?select=*&verified=eq.true';
+    if (game) query += `&game=eq.${encodeURIComponent(game)}`;
+    if (resolution) query += `&resolution=eq.${encodeURIComponent(resolution)}`;
+    if (displayMode) query += `&display_mode=eq.${encodeURIComponent(displayMode)}`;
+    if (search && search.trim()) {
+      const safe = search.trim().replace(/[%_,()]/g, '').slice(0, 40);
+      if (safe.length > 0) {
+        const pattern = encodeURIComponent(`*${safe}*`);
+        query += `&or=(name.ilike.${pattern},author.ilike.${pattern})`;
+      }
+    }
+    if (sort === 'recent') query += '&order=created_at.desc';
+    else if (sort === 'rating') query += '&order=rating.desc';
+    else query += '&order=downloads.desc';
+
+    query += `&limit=${limit}&offset=${page * limit}`;
+    const data = await supabaseFetch(query);
+    return { ok: true, items: data || [] };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// Install a game preset (increment counter + save locally + apply offset)
+ipcMain.handle('gamePreset:install', async (event, id) => {
+  try {
+    const data = await supabaseFetch(`/game_presets?id=eq.${encodeURIComponent(id)}&select=*`);
+    if (!data || !data.length) return { ok: false, error: 'Not found' };
+    const item = data[0];
+
+    const installed = getInstalledGamePresets();
+    if (installed.find(x => x.id === id)) {
+      return { ok: false, error: 'Already installed. Check Display tab.', alreadyInstalled: true };
+    }
+
+    // Increment downloads
+    try {
+      await supabaseFetch('/rpc/increment_game_preset_downloads', {
+        method: 'POST',
+        body: JSON.stringify({ preset_id_param: id })
+      });
+    } catch (err) {
+      console.error('Increment game preset downloads RPC failed:', err.message);
+      return { ok: false, error: 'Could not update download count: ' + err.message };
+    }
+
+    // Save to local installed list
+    const entry = {
+      id: item.id,
+      name: item.name,
+      author: item.author,
+      game: item.game,
+      resolution: item.resolution,
+      display_mode: item.display_mode,
+      offset_x: item.offset_x,
+      offset_y: item.offset_y,
+      description: item.description,
+      installed_at: new Date().toISOString()
+    };
+    installed.push(entry);
+    setInstalledGamePresets(installed);
+
+    // Apply offset immediately
+    settings.offsetX = item.offset_x;
+    settings.offsetY = item.offset_y;
+    saveSettings();
+    broadcastSettings();
+
+    return { ok: true, entry, settings };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// Uninstall a game preset (decrement + remove from local list)
+ipcMain.handle('gamePreset:uninstall', async (event, id) => {
+  try {
+    let installed = getInstalledGamePresets();
+    const entry = installed.find(x => x.id === id);
+    if (!entry) return { ok: false, error: 'Not in your installed library' };
+
+    try {
+      await supabaseFetch('/rpc/decrement_game_preset_downloads', {
+        method: 'POST',
+        body: JSON.stringify({ preset_id_param: id })
+      });
+    } catch (err) {
+      console.error('Decrement game preset downloads failed:', err.message);
+    }
+
+    installed = installed.filter(x => x.id !== id);
+    setInstalledGamePresets(installed);
+
+    return { ok: true, installed };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('gamePreset:listInstalled', () => getInstalledGamePresets());
+
+// Apply a previously-installed game preset to current crosshair offset
+ipcMain.handle('gamePreset:applyInstalled', (event, id) => {
+  const installed = getInstalledGamePresets();
+  const entry = installed.find(x => x.id === id);
+  if (!entry) return { ok: false, error: 'Not found' };
+  settings.offsetX = entry.offset_x;
+  settings.offsetY = entry.offset_y;
+  saveSettings();
+  broadcastSettings();
+  return { ok: true, settings };
+});
+
+// Report a community game preset
+ipcMain.handle('gamePreset:report', async (event, { id, reason }) => {
+  try {
+    await supabaseFetch('/game_preset_reports', {
+      method: 'POST',
+      body: JSON.stringify({
+        preset_id: id,
+        reason: (reason || 'inappropriate').slice(0, 200),
+        reported_at: new Date().toISOString()
+      })
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
 // First-launch disclaimer
 async function showFirstLaunchDisclaimer() {
   if (!store || store.get('disclaimer_accepted')) return true;
@@ -1075,8 +1257,64 @@ Click "I Understand & Accept" to continue, or "Exit" to quit.`,
   return true;
 }
 
+// ========== CLEANUP MODE (called by uninstaller) ==========
+async function runCleanupMode() {
+  try {
+    const Store = (await import('electron-store')).default;
+    const tempStore = new Store({ name: 'crosshair-f-config' });
+    const installedCrosshairs = tempStore.get('installedCrosshairs') || [];
+    const installedGamePresets = tempStore.get('installedGamePresets') || [];
+    const savedCfg = tempStore.get('community') || {};
+    const endpoint = (savedCfg.endpoint || DEFAULT_COMMUNITY_CONFIG.endpoint).replace(/\/$/, '');
+    const apiKey = savedCfg.apiKey || DEFAULT_COMMUNITY_CONFIG.apiKey;
+
+    console.log(`[Cleanup] Decrementing ${installedCrosshairs.length} crosshair installs + ${installedGamePresets.length} game preset installs...`);
+
+    // Helper to call a decrement RPC with timeout
+    const decrementCall = (rpc, param, value) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3000);
+      return fetch(`${endpoint}/rest/v1/rpc/${rpc}`, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'apikey': apiKey,
+          'Authorization': 'Bearer ' + apiKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ [param]: value })
+      }).catch(() => null).finally(() => clearTimeout(timer));
+    };
+
+    // Decrement crosshair installs
+    const crosshairPromises = installedCrosshairs.map(item =>
+      decrementCall('decrement_downloads', 'crosshair_id_param', item.id)
+    );
+    // Decrement game preset installs
+    const gamePresetPromises = installedGamePresets.map(item =>
+      decrementCall('decrement_game_preset_downloads', 'preset_id_param', item.id)
+    );
+
+    await Promise.all([...crosshairPromises, ...gamePresetPromises]);
+
+    // Clear lists so reinstall starts fresh
+    tempStore.set('installedCrosshairs', []);
+    tempStore.set('installedGamePresets', []);
+    tempStore.set('appliedCommunityIds', []);
+
+    console.log('[Cleanup] Done.');
+  } catch (e) {
+    console.error('[Cleanup] Failed:', e.message);
+  }
+  app.quit();
+}
+
 // App lifecycle
 app.whenReady().then(async () => {
+  if (isCleanupMode) {
+    await runCleanupMode();
+    return;
+  }
   await loadStore();
   const accepted = await showFirstLaunchDisclaimer();
   if (!accepted) return;
