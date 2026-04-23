@@ -48,17 +48,23 @@
       "buildResources": "assets"
     },
     "win": {
-  "target": [
-    { "target": "appx", "arch": ["x64"] },
-    { "target": "nsis", "arch": ["x64"] },
-    { "target": "portable", "arch": ["x64"] }
-  ],
-  "icon": "assets/icon.ico",
-  "requestedExecutionLevel": "asInvoker"
-},
-  "icon": "assets/icon.ico",
-  "requestedExecutionLevel": "asInvoker"
-},
+      "target": [
+        { "target": "appx", "arch": ["x64"] },
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "assets/icon.ico",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "appx": {
+      "identityName": "WaseemKhan.CrosshairF",
+      "publisher": "CN=5649DEAA-43B0-4177-BB90-A67BCE26CFB5",
+      "publisherDisplayName": "Waseem Khan",
+      "applicationId": "CrosshairF",
+      "backgroundColor": "#0a0e14",
+      "displayName": "Crosshair F",
+      "languages": ["en-US"]
+    },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
@@ -74,16 +80,6 @@
       "runAfterFinish": true,
       "warningsAsErrors": false
     },
-
-    "appx": {
-  "identityName": "WaseemKhan.CrosshairF",
-  "publisher": "CN=5649DEAA-43B0-4177-BB90-A67BCE26CFB5",
-  "publisherDisplayName": "Waseem Khan",
-  "applicationId": "CrosshairF",
-  "backgroundColor": "#0a0e14",
-  "displayName": "Crosshair F",
-  "languages": ["en-US"]
-},
     "portable": {
       "artifactName": "CrosshairF-Portable.exe"
     }
